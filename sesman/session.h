@@ -60,6 +60,7 @@ struct session_date
 struct session_item
 {
   char name[256];
+  char auth_file[256];
   int pid; /* pid of sesman waiting for wm to end */
   int display;
   int width;

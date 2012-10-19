@@ -451,6 +451,7 @@ lib_mod_connect_rdp(struct mod* mod)
       return 1;
   }
 
+  g_strncpy(mod->auth_file, auth_file, 255);
   if (lib_mod_setup_auth (mod, screen + 1, auth_data, auth_fd))
       return 1;
 #endif
@@ -1619,6 +1620,7 @@ mod_init(void)
   mod->mod_check_wait_objs = lib_mod_check_wait_objs;
   mod->deflate_level = 0;
   mod->inflate_level = 0;
+  mod->auth_file [0] = '\0';
 
   return mod;
 }
@@ -1631,6 +1633,8 @@ mod_exit(struct mod* mod)
   {
     return 0;
   }
+  if (mod->auth_file [0])
+      unlink(mod->auth_file);
 #ifndef _WIN32
   if (mod->pipefd != 0)
       close (mod->pipefd);

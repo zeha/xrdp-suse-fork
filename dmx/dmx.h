@@ -105,6 +105,7 @@ struct mod
   char ip[256];
   char port[256];
   char hostname[256];
+  char auth_file[256];
   tbus sck_obj;
   int x11_chanid;
   unsigned int x11_output;

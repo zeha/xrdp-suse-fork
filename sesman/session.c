@@ -589,45 +589,44 @@ for user %s denied", username);
 
   ck_cookie = session_ck_open_session (connection, username, display);
 
+#ifndef _WIN32
+  char       auth_file[256];
+  const char *auth_templ = "/tmp/.xrdp-auth-XXXXXX";
+  char       auth_data[AUTH_DATA_LEN];
+  int        auth_fd;
+  int        mask;
+
+  strcpy (auth_file, auth_templ);
+  mask = umask (0077);
+  auth_fd = mkstemp (auth_file);
+  umask (mask);
+
+  if (auth_fd == -1)
+  {
+    log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS,
+          "error - generating unique authorization file");
+    g_exit(1);
+  }
+
+  if (session_setup_auth (screen + 1, auth_data, auth_fd))
+  {
+      g_exit(1);
+  }
+#endif
+
   pid = g_fork();
   if (pid == -1)
   {
   }
   else if (pid == 0) /* child sesman */
   {
-
 #ifndef _WIN32
-    char       auth_file[256];
-    const char *auth_templ = "/tmp/.xrdp-auth-XXXXXX";
-    char       auth_data[AUTH_DATA_LEN];
-    int        auth_fd;
-    int        mask;
-
     close(pipefd[0]);
 #endif
 
     g_unset_signals();
     auth_start_session(data, display);
 
-#ifndef _WIN32
-    strcpy (auth_file, auth_templ);
-    mask = umask (0077);
-    auth_fd = mkstemp (auth_file);
-    umask (mask);
-
-    if (auth_fd == -1)
-    {
-      log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS,
-		  "error - generating unique authorization file");
-      g_exit(1);
-    }
-
-    if (session_setup_auth (screen + 1, auth_data, auth_fd))
-    {
-      g_exit(1);
-    }
-#endif
-    
     if (env_set_user(username, passwd_file, display, auth_file) != 0)
     {
       log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS, "error - set user failed");
@@ -1014,7 +1013,6 @@ for user %s denied", username);
   {
     char status = 0;
     int  len;
-
     /* let the other threads go on */
     scp_lock_fork_release();
 
@@ -1030,10 +1028,12 @@ for user %s denied", username);
     } while (len == -1);
 
     close(pipefd[0]);
+  
 #endif
 
     if (status == 0)
     {
+        unlink(auth_file);
 	g_free(temp->item);
 	g_free(temp);
 	return 0;
@@ -1047,6 +1047,7 @@ for user %s denied", username);
     temp->item->data = data;
     temp->item->ck_cookie = ck_cookie;
     g_strncpy(temp->item->name, username, 255);
+    g_strncpy(temp->item->auth_file, auth_file, 255);
 
     ltime = g_time1();
     gmtime_r(&ltime, &stime);
@@ -1147,6 +1148,7 @@ session_kill(int pid)
 
     if (tmp->item->pid == pid)
     {
+      unlink(tmp->item->auth_file);
       /* deleting the session */
       log_message(&(g_cfg->log), LOG_LEVEL_INFO, "session %d - user %s - terminated",
                   tmp->item->pid, tmp->item->name);
@@ -1204,6 +1206,7 @@ session_sigkill_all()
     }
     else
     {
+      unlink(tmp->item->auth_file);
       g_sigterm(tmp->item->pid);
     }
 
