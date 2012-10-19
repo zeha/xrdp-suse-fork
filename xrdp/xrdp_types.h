@@ -14,7 +14,7 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
    xrdp: A Remote Desktop Protocol server.
-   Copyright (C) Jay Sorg 2004-2007
+   Copyright (C) Jay Sorg 2004-2008
 
    types
 
@@ -33,7 +33,11 @@ struct xrdp_mod
   int (*mod_signal)(struct xrdp_mod* v);
   int (*mod_end)(struct xrdp_mod* v);
   int (*mod_set_param)(struct xrdp_mod* v, char* name, char* value);
-  long mod_dumby[100 - 6]; /* align, 100 minus the number of mod 
+  int (*mod_session_change)(struct xrdp_mod* v, int, int);
+  int (*mod_get_wait_objs)(struct xrdp_mod* v, tbus* read_objs, int* rcount,
+                           tbus* write_objs, int* wcount, int* timeout);
+  int (*mod_check_wait_objs)(struct xrdp_mod* v);
+  long mod_dumby[100 - 9]; /* align, 100 minus the number of mod 
                               functions above */
   /* server functions */
   int (*server_begin_update)(struct xrdp_mod* v);
@@ -126,6 +130,14 @@ struct xrdp_pointer_item
   char mask[32 * 32 / 8];
 };
 
+struct xrdp_brush_item
+{
+  int stamp;
+  /* expand this to a structure to handle more complicated brushes
+     for now its 8x8 1bpp brushes only */
+  char pattern[8];
+};
+
 /* differnce caches */
 struct xrdp_cache
 {
@@ -153,6 +165,8 @@ struct xrdp_cache
   int pointer_stamp;
   struct xrdp_pointer_item pointer_items[32];
   int pointer_cache_entries;
+  int brush_stamp;
+  struct xrdp_brush_item brush_items[64];
 };
 
 struct xrdp_mm
@@ -160,6 +174,7 @@ struct xrdp_mm
   struct xrdp_wm* wm; /* owner */
   int connected_state;
   int sck;
+  tbus sck_obj;
   int sck_closed;
   struct list* login_names;
   struct list* login_values;
@@ -170,6 +185,15 @@ struct xrdp_mm
   struct xrdp_mod* mod;
   int display;
   int code;
+};
+
+struct xrdp_keymap
+{
+  int keys_noshift[128];
+  int keys_shift[128];
+  int keys_altgr[128];
+  int keys_capslock[128];
+  int keys_shiftcapslock[128];
 };
 
 /* the window manager */
@@ -218,14 +242,16 @@ struct xrdp_wm
   int caps_lock;
   int scroll_lock;
   int num_lock;
-  struct list* key_down_list;
   /* client info */
   struct xrdp_client_info* client_info;
   /* session log */
   struct list* log;
   struct xrdp_bitmap* log_wnd;
   int login_mode;
+  tbus login_mode_event;
   struct xrdp_mm* mm;
+  struct xrdp_font* default_font;
+  struct xrdp_keymap keymap;
 };
 
 /* rdp process */
@@ -233,12 +259,14 @@ struct xrdp_process
 {
   int status;
   int sck;
-  int term;
+  tbus self_term_event;
   struct xrdp_listen* lis_layer; /* owner */
   struct xrdp_session* session;
   /* create these when up and running */
   struct xrdp_wm* wm;
   int app_sck;
+  tbus done_event;
+  int session_id;
 };
 
 /* rdp listener */
@@ -246,10 +274,8 @@ struct xrdp_listen
 {
   int status;
   int sck;
-  int term;
-  struct xrdp_process* process_list[100]; /* 100 processes possible */
-  int process_list_count;
-  int process_list_max;
+  struct list* process_list;
+  tbus pro_done_event;
 };
 
 /* region */
@@ -314,7 +340,7 @@ struct xrdp_bitmap
   struct list* child_list;
   /* for edit */
   int edit_pos;
-  int password_char;
+  twchar password_char;
   /* for button or combo */
   int state; /* for button 0 = normal 1 = down */
   /* for combo */
@@ -329,12 +355,14 @@ struct xrdp_bitmap
   int crc;
 };
 
+#define NUM_FONTS 0x4e00
+#define DEFAULT_FONT_NAME "sans-10.fv1"
+
 /* font */
 struct xrdp_font
 {
   struct xrdp_wm* wm;
-  struct xrdp_font_char font_items[256];
-  int color;
+  struct xrdp_font_char font_items[NUM_FONTS];
   char name[32];
   int size;
   int style;
@@ -345,12 +373,4 @@ struct xrdp_mod_data
 {
   struct list* names;
   struct list* values;
-};
-
-struct xrdp_key_down
-{
-  int scan_code;
-  int param1;
-  int param2;
-  int param4;
 };

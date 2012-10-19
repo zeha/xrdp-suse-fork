@@ -1,5 +1,5 @@
 /*
-Copyright 2005-2007 Jay Sorg
+Copyright 2005-2008 Jay Sorg
 
 Permission to use, copy, modify, distribute, and sell this software and its
 documentation for any purpose is hereby granted without fee, provided that
@@ -771,8 +771,8 @@ KbdAddEvent(int down, int param1, int param2, int param3, int param4)
     case 42: /* left shift */
       ch = 10;
       break;
-    case 43: /* / */
-      ch = 36;
+    case 43: /* \ or | */
+      ch = 37;
       break;
     case 44: /* z */
       ch = 63;

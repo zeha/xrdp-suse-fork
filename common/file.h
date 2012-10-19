@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004-2007 Jay Sorg
+   Copyright (c) 2004-2008 Jay Sorg
 
    Permission is hereby granted, free of charge, to any person obtaining a
    copy of this software and associated documentation files (the "Software"),
@@ -30,7 +30,12 @@
 int APP_CC
 file_read_sections(int fd, struct list* names);
 int APP_CC
-file_read_section(int fd, const char* section, struct list* names,
-                  struct list* values);
+file_by_name_read_sections(const char* file_name, struct list* names);
+int APP_CC
+file_read_section(int fd, const char* section,
+                  struct list* names, struct list* values);
+int APP_CC
+file_by_name_read_section(const char* file_name, const char* section,
+                          struct list* names, struct list* values);
 
 #endif

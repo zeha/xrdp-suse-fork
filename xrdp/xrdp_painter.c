@@ -14,7 +14,7 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
    xrdp: A Remote Desktop Protocol server.
-   Copyright (C) Jay Sorg 2004-2007
+   Copyright (C) Jay Sorg 2004-2008
 
    painter, gc
 
@@ -44,7 +44,6 @@ xrdp_painter_delete(struct xrdp_painter* self)
   {
     return;
   }
-  xrdp_font_delete(self->font);
   g_free(self);
 }
 
@@ -70,7 +69,7 @@ xrdp_painter_font_needed(struct xrdp_painter* self)
 {
   if (self->font == 0)
   {
-    self->font = xrdp_font_create(self->wm);
+    self->font = self->wm->default_font;
   }
   return 0;
 }
@@ -182,19 +181,27 @@ xrdp_painter_text_width(struct xrdp_painter* self, char* text)
   int rv;
   int len;
   struct xrdp_font_char* font_item;
+  twchar* wstr;
 
   xrdp_painter_font_needed(self);
+  if (self->font == 0)
+  {
+    return 0;
+  }
   if (text == 0)
   {
     return 0;
   }
   rv = 0;
-  len = g_strlen(text);
+  len = g_mbstowcs(0, text, 0);
+  wstr = (twchar*)g_malloc((len + 2) * sizeof(twchar), 0);
+  g_mbstowcs(wstr, text, len + 1);
   for (index = 0; index < len; index++)
   {
-    font_item = self->font->font_items + (unsigned char)text[index];
+    font_item = self->font->font_items + wstr[index];
     rv = rv + font_item->incby;
   }
+  g_free(wstr);
   return rv;
 }
 
@@ -206,20 +213,50 @@ xrdp_painter_text_height(struct xrdp_painter* self, char* text)
   int rv;
   int len;
   struct xrdp_font_char* font_item;
+  twchar* wstr;
 
   xrdp_painter_font_needed(self);
+  if (self->font == 0)
+  {
+    return 0;
+  }
   if (text == 0)
   {
     return 0;
   }
   rv = 0;
-  len = g_strlen(text);
+  len = g_mbstowcs(0, text, 0);
+  wstr = (twchar*)g_malloc((len + 2) * sizeof(twchar), 0);
+  g_mbstowcs(wstr, text, len + 1);
   for (index = 0; index < len; index++)
   {
-    font_item = self->font->font_items + (unsigned char)text[index];
+    font_item = self->font->font_items + wstr[index];
     rv = MAX(rv, font_item->height);
   }
+  g_free(wstr);
   return rv;
+}
+
+/*****************************************************************************/
+static int APP_CC
+xrdp_painter_setup_brush(struct xrdp_painter* self,
+                         struct xrdp_brush* out_brush,
+                         struct xrdp_brush* in_brush)
+{
+  int cache_id;
+
+  g_memcpy(out_brush, in_brush, sizeof(struct xrdp_brush));
+  if (in_brush->style == 3)
+  {
+    if (self->session->client_info->brush_cache_code == 1)
+    {
+      cache_id = xrdp_cache_add_brush(self->wm->cache, in_brush->pattern);
+      g_memset(out_brush->pattern, 0, 8);
+      out_brush->pattern[0] = cache_id;
+      out_brush->style = 0x81;
+    }
+  }
+  return 0;
 }
 
 /*****************************************************************************/
@@ -233,6 +270,7 @@ xrdp_painter_fill_rect(struct xrdp_painter* self,
   struct xrdp_rect draw_rect;
   struct xrdp_rect rect;
   struct xrdp_region* region;
+  struct xrdp_brush brush;
   int k;
   int dx;
   int dy;
@@ -307,13 +345,14 @@ xrdp_painter_fill_rect(struct xrdp_painter* self,
           break;
       }
     }
+    xrdp_painter_setup_brush(self, &brush, &self->brush);
     while (xrdp_region_get_rect(region, k, &rect) == 0)
     {
       if (rect_intersect(&rect, &clip_rect, &draw_rect))
       {
         libxrdp_orders_pat_blt(self->session, x, y, cx, cy,
                                rop, self->bg_color, self->fg_color,
-                               &self->brush, &draw_rect);
+                               &brush, &draw_rect);
       }
       k++;
     }
@@ -348,12 +387,13 @@ xrdp_painter_draw_text(struct xrdp_painter* self,
   struct xrdp_rect draw_rect;
   struct xrdp_font* font;
   struct xrdp_font_char* font_item;
+  twchar* wstr;
 
   if (self == 0)
   {
     return 0;
   }
-  len = g_strlen(text);
+  len = g_mbstowcs(0, text, 0);
   if (len < 1)
   {
     return 0;
@@ -366,6 +406,13 @@ xrdp_painter_draw_text(struct xrdp_painter* self,
     return 0;
   }
   xrdp_painter_font_needed(self);
+  if (self->font == 0)
+  {
+    return 0;
+  }
+  /* convert to wide char */
+  wstr = (twchar*)g_malloc((len + 2) * sizeof(twchar), 0);
+  g_mbstowcs(wstr, text, len + 1);
   font = self->font;
   f = 0;
   k = 0;
@@ -374,7 +421,7 @@ xrdp_painter_draw_text(struct xrdp_painter* self,
   data = (char*)g_malloc(len * 4, 1);
   for (index = 0; index < len; index++)
   {
-    font_item = font->font_items + (unsigned char)text[index];
+    font_item = font->font_items + wstr[index];
     i = xrdp_cache_add_char(self->wm->cache, font_item);
     f = HIWORD(i);
     c = LOWORD(i);
@@ -399,7 +446,7 @@ xrdp_painter_draw_text(struct xrdp_painter* self,
       y1 = y + total_height;
       flags = 0x03; /* 0x03 0x73; TEXT2_IMPLICIT_X and something else */
       libxrdp_orders_text(self->session, f, flags, 0,
-                          font->color, 0,
+                          self->fg_color, 0,
                           x - 1, y - 1, x + total_width, y + total_height,
                           0, 0, 0, 0,
                           x1, y1, data, len * 2, &draw_rect);
@@ -408,6 +455,7 @@ xrdp_painter_draw_text(struct xrdp_painter* self,
   }
   xrdp_region_delete(region);
   g_free(data);
+  g_free(wstr);
   return 0;
 }
 
@@ -637,7 +685,7 @@ xrdp_painter_line(struct xrdp_painter* self,
   {
     if (rect_intersect(&rect, &clip_rect, &draw_rect))
     {
-      libxrdp_orders_line(self->session, 0, x1, y1, x2, y2,
+      libxrdp_orders_line(self->session, 1, x1, y1, x2, y2,
                           rop, self->bg_color,
                           &self->pen, &draw_rect);
     }

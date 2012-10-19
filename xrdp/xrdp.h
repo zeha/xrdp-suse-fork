@@ -14,13 +14,16 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
    xrdp: A Remote Desktop Protocol server.
-   Copyright (C) Jay Sorg 2004-2007
+   Copyright (C) Jay Sorg 2004-2008
 
    main include file
 
 */
 
 /* include other h files */
+#if defined(HAVE_CONFIG_H)
+#include "config_ac.h"
+#endif
 #include "arch.h"
 #include "parse.h"
 #include "libxrdpinc.h"
@@ -32,6 +35,7 @@
 #include "thread_calls.h"
 #include "list.h"
 #include "file.h"
+#include "file_loc.h"
 
 /* xrdp.c */
 long APP_CC
@@ -41,6 +45,10 @@ int APP_CC
 g_is_term(void);
 void APP_CC
 g_set_term(int in_val);
+tbus APP_CC
+g_get_term_event(void);
+tbus APP_CC
+g_get_sync_event(void);
 void APP_CC
 g_loop(void);
 
@@ -67,6 +75,9 @@ int APP_CC
 xrdp_cache_add_pointer_static(struct xrdp_cache* self,
                               struct xrdp_pointer_item* pointer_item,
                               int index);
+int APP_CC
+xrdp_cache_add_brush(struct xrdp_cache* self,
+                     char* brush_item_data);
 
 /* xrdp_wm.c */
 struct xrdp_wm* APP_CC
@@ -113,15 +124,20 @@ callback(long id, int msg, long param1, long param2, long param3, long param4);
 int APP_CC
 xrdp_wm_delete_all_childs(struct xrdp_wm* self);
 int APP_CC
-xrdp_wm_idle(struct xrdp_wm* self);
-int APP_CC
 xrdp_wm_app_sck_signal(struct xrdp_wm* self, int app_sck);
 int APP_CC
 xrdp_wm_log_msg(struct xrdp_wm* self, char* msg);
+int APP_CC
+xrdp_wm_get_wait_objs(struct xrdp_wm* self, tbus* robjs, int* rc,
+                      tbus* wobjs, int* wc, int* timeout);
+int APP_CC
+xrdp_wm_check_wait_objs(struct xrdp_wm* self);
+int APP_CC
+xrdp_wm_set_login_mode(struct xrdp_wm* self, int login_mode);
 
 /* xrdp_process.c */
 struct xrdp_process* APP_CC
-xrdp_process_create(struct xrdp_listen* owner);
+xrdp_process_create(struct xrdp_listen* owner, tbus done_event);
 void APP_CC
 xrdp_process_delete(struct xrdp_process* self);
 int APP_CC
@@ -132,8 +148,6 @@ struct xrdp_listen* APP_CC
 xrdp_listen_create(void);
 void APP_CC
 xrdp_listen_delete(struct xrdp_listen* self);
-int APP_CC
-xrdp_listen_delete_pro(struct xrdp_listen* self, struct xrdp_process* pro);
 int APP_CC
 xrdp_listen_main_loop(struct xrdp_listen* self);
 
@@ -283,17 +297,21 @@ rect_contained_by(struct xrdp_rect* in1, int left, int top,
 int APP_CC
 check_bounds(struct xrdp_bitmap* b, int* x, int* y, int* cx, int* cy);
 int APP_CC
-add_char_at(char* text, char ch, int index);
+add_char_at(char* text, int text_size, twchar ch, int index);
 int APP_CC
-remove_char_at(char* text, int index);
+remove_char_at(char* text, int text_size, int index);
 int APP_CC
 set_string(char** in_str, const char* in);
+int APP_CC
+wchar_repeat(twchar* dest, int dest_size_in_wchars, twchar ch, int repeat);
 
 /* in lang.c */
-char APP_CC
+twchar APP_CC
 get_char_from_scan_code(int device_flags, int scan_code, int* keys,
                         int caps_lock, int num_lock, int scroll_lock,
-                        int keylayout);
+                        struct xrdp_keymap* keymap);
+int APP_CC
+get_keymaps(int keylayout, struct xrdp_keymap* keymap);
 
 /* xrdp_login_wnd.c */
 int APP_CC

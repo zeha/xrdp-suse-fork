@@ -14,7 +14,7 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
    xrdp: A Remote Desktop Protocol server.
-   Copyright (C) Jay Sorg 2005-2007
+   Copyright (C) Jay Sorg 2005-2008
 */
 
 /**
@@ -28,8 +28,14 @@
 #ifndef LIBSCP_H
 #define LIBSCP_H
 
+#if defined(HAVE_CONFIG_H)
+#include "config_ac.h"
+#endif
+
 #include "libscp_types.h"
 
+#include "libscp_connection.h"
+#include "libscp_session.h"
 #include "libscp_init.h"
 #include "libscp_tcp.h"
 #include "libscp_lock.h"
@@ -38,5 +44,6 @@
 #include "libscp_v0.h"
 #include "libscp_v1s.h"
 #include "libscp_v1c.h"
+#include "file_loc.h"
 
 #endif

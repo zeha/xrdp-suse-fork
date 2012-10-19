@@ -14,7 +14,7 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
    xrdp: A Remote Desktop Protocol server.
-   Copyright (C) Jay Sorg 2004-2007
+   Copyright (C) Jay Sorg 2004-2008
 
    libxrdp header
 
@@ -23,6 +23,9 @@
 #if !defined(LIBXRDP_H)
 #define LIBXRDP_H
 
+#if defined(HAVE_CONFIG_H)
+#include "config_ac.h"
+#endif
 #include "arch.h"
 #include "parse.h"
 #include "xrdp_constants.h"
@@ -32,6 +35,7 @@
 #include "list.h"
 #include "file.h"
 #include "libxrdpinc.h"
+#include "file_loc.h"
 
 /* tcp */
 struct xrdp_tcp
@@ -379,6 +383,9 @@ int APP_CC
 xrdp_orders_send_bitmap2(struct xrdp_orders* self,
                          int width, int height, int bpp, char* data,
                          int cache_id, int cache_idx);
+int APP_CC
+xrdp_orders_send_brush(struct xrdp_orders* self, int width, int height,
+                       int bpp, int type, int size, char* data, int cache_id);
 
 /* xrdp_bitmap_compress.c */
 int APP_CC

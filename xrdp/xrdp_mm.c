@@ -14,7 +14,7 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
    xrdp: A Remote Desktop Protocol server.
-   Copyright (C) Jay Sorg 2004-2007
+   Copyright (C) Jay Sorg 2004-2008
 
    module manager
 
@@ -50,7 +50,12 @@ sync_unload(long param1, long param2)
 static long DEFAULT_CC
 sync_load(long param1, long param2)
 {
-  return g_load_library((char*)param1);
+  long rv;
+  char* libname;
+
+  libname = (char*)param1;
+  rv = g_load_library(libname);
+  return rv;
 }
 
 /*****************************************************************************/
@@ -82,8 +87,13 @@ xrdp_mm_delete(struct xrdp_mm* self)
   {
     return;
   }
-  /* free any modual stuff */
+  /* free any module stuff */
   xrdp_mm_module_cleanup(self);
+  if (self->sck_obj != 0)
+  {
+    g_delete_wait_obj_from_socket(self->sck_obj);
+    self->sck_obj = 0;
+  }
   if (self->sck != 0)
   {
     g_tcp_close(self->sck);
@@ -289,6 +299,7 @@ xrdp_mm_setup_mod1(struct xrdp_mm* self)
 {
   void* func;
   char lib[256];
+  char text[256];
 
   if (self == 0)
   {
@@ -297,12 +308,14 @@ xrdp_mm_setup_mod1(struct xrdp_mm* self)
   lib[0] = 0;
   if (xrdp_mm_get_lib(self, lib, 255) != 0)
   {
-    g_writeln("error finding lib");
+    g_snprintf(text, 255, "error finding lib");
+    xrdp_wm_log_msg(self->wm, text);
     return 1;
   }
   if (lib[0] == 0)
   {
-    g_writeln("error finding lib");
+    g_snprintf(text, 255, "error finding lib");
+    xrdp_wm_log_msg(self->wm, text);
     return 1;
   }
   if (self->mod_handle == 0)
@@ -317,7 +330,8 @@ xrdp_mm_setup_mod1(struct xrdp_mm* self)
       }
       if (func == 0)
       {
-        g_writeln("error finding proc mod_init in %s", lib);
+        g_snprintf(text, 255, "error finding proc mod_init in %s", lib);
+        xrdp_wm_log_msg(self->wm, text);
       }
       self->mod_init = (struct xrdp_mod* (*)(void))func;
       func = g_get_proc_address(self->mod_handle, "mod_exit");
@@ -327,7 +341,8 @@ xrdp_mm_setup_mod1(struct xrdp_mm* self)
       }
       if (func == 0)
       {
-        g_writeln("error finding proc mod_exit in %s", lib);
+        g_snprintf(text, 255, "error finding proc mod_exit in %s", lib);
+        xrdp_wm_log_msg(self->wm, text);
       }
       self->mod_exit = (int (*)(struct xrdp_mod*))func;
       if ((self->mod_init != 0) && (self->mod_exit != 0))
@@ -337,7 +352,8 @@ xrdp_mm_setup_mod1(struct xrdp_mm* self)
     }
     else
     {
-      g_writeln("error loading %s", lib);
+      g_snprintf(text, 255, "error loading %s", lib);
+      xrdp_wm_log_msg(self->wm, text);
     }
     if (self->mod != 0)
     {
@@ -386,19 +402,21 @@ xrdp_mm_setup_mod2(struct xrdp_mm* self)
   char* value;
   int i;
   int rv;
+  int key_flags;
+  int device_flags;
 
   rv = 1;
   text[0] = 0;
-  if (!(self->wm->pro_layer->term))
+  if (!g_is_wait_obj_set(self->wm->pro_layer->self_term_event))
   {
     if (self->mod->mod_start(self->mod, self->wm->screen->width,
                              self->wm->screen->height,
                              self->wm->screen->bpp) != 0)
     {
-      self->wm->pro_layer->term = 1; /* kill session */
+      g_set_wait_obj(self->wm->pro_layer->self_term_event); /* kill session */
     }
   }
-  if (!(self->wm->pro_layer->term))
+  if (!g_is_wait_obj_set(self->wm->pro_layer->self_term_event))
   {
     if (self->display > 0)
     {
@@ -412,11 +430,11 @@ xrdp_mm_setup_mod2(struct xrdp_mm* self)
       }
       else
       {
-        self->wm->pro_layer->term = 1; /* kill session */
+        g_set_wait_obj(self->wm->pro_layer->self_term_event); /* kill session */
       }
     }
   }
-  if (!(self->wm->pro_layer->term))
+  if (!g_is_wait_obj_set(self->wm->pro_layer->self_term_event))
   {
     /* this adds the port to the end of the list, it will already be in
        the list as -1
@@ -443,6 +461,32 @@ xrdp_mm_setup_mod2(struct xrdp_mm* self)
       rv = 0;
     }
   }
+  if (rv == 0)
+  {
+    /* sync modifiers */
+    key_flags = 0;
+    device_flags = 0;
+    if (self->wm->scroll_lock)
+    {
+      key_flags |= 1;
+    }
+    if (self->wm->num_lock)
+    {
+      key_flags |= 2;
+    }
+    if (self->wm->caps_lock)
+    {
+      key_flags |= 4;
+    }
+    if (self->mod != 0)
+    {
+      if (self->mod->mod_event != 0)
+      {
+        self->mod->mod_event(self->mod, 17, key_flags, device_flags,
+                             key_flags, device_flags);
+      }
+    }
+  }
   return rv;
 }
 
@@ -467,8 +511,8 @@ xrdp_mm_process_login_response(struct xrdp_mm* self, struct stream* s)
     {
       if (xrdp_mm_setup_mod2(self) == 0)
       {
-        self->wm->login_mode = 10;
-        self->wm->pro_layer->app_sck = self->mod->sck;
+        xrdp_wm_set_login_mode(self->wm, 10);
+        self->wm->dragging = 0;
       }
     }
   }
@@ -477,13 +521,14 @@ xrdp_mm_process_login_response(struct xrdp_mm* self, struct stream* s)
     xrdp_wm_log_msg(self->wm, "login failed");
   }
   /* close socket */
+  g_delete_wait_obj_from_socket(self->sck_obj);
+  self->sck_obj = 0;
   g_tcp_close(self->sck);
   self->sck = 0;
   self->connected_state = 0;
   if (self->wm->login_mode != 10)
   {
-    self->wm->pro_layer->app_sck = 0;
-    self->wm->login_mode = 11;
+    xrdp_wm_set_login_mode(self->wm, 11);
     xrdp_mm_module_cleanup(self);
   }
   return rv;
@@ -533,6 +578,7 @@ xrdp_mm_connect(struct xrdp_mm* self)
     ok = 0;
     errstr[0] = 0;
     self->sck = g_tcp_socket();
+    self->sck_obj = g_create_wait_obj_from_socket(self->sck, 0);
     g_tcp_set_non_blocking(self->sck);
     g_snprintf(text, 255, "connecting to sesman ip %s port 3350", ip);
     xrdp_wm_log_msg(self->wm, text);
@@ -570,12 +616,13 @@ xrdp_mm_connect(struct xrdp_mm* self)
       /* fully connect */
       xrdp_wm_log_msg(self->wm, "sesman connect ok");
       self->connected_state = 1;
-      self->wm->pro_layer->app_sck = self->sck;
       rv = xrdp_mm_send_login(self);
     }
     else
     {
       xrdp_wm_log_msg(self->wm, errstr);
+      g_delete_wait_obj_from_socket(self->sck_obj);
+      self->sck_obj = 0;
       g_tcp_close(self->sck);
       self->sck = 0;
       rv = 1;
@@ -587,14 +634,12 @@ xrdp_mm_connect(struct xrdp_mm* self)
     {
       if (xrdp_mm_setup_mod2(self) == 0)
       {
-        self->wm->login_mode = 10;
-        self->wm->pro_layer->app_sck = self->mod->sck;
+        xrdp_wm_set_login_mode(self->wm, 10);
       }
     }
     if (self->wm->login_mode != 10)
     {
-      self->wm->pro_layer->app_sck = 0;
-      self->wm->login_mode = 11;
+      xrdp_wm_set_login_mode(self->wm, 11);
       xrdp_mm_module_cleanup(self);
     }
   }

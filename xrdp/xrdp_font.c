@@ -15,7 +15,7 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
    xrdp: A Remote Desktop Protocol server.
-   Copyright (C) Jay Sorg 2004-2007
+   Copyright (C) Jay Sorg 2004-2008
 
    fonts
 
@@ -73,16 +73,31 @@ xrdp_font_create(struct xrdp_wm* wm)
   int i;
   int index;
   int datasize;
+  int file_size;
   struct xrdp_font_char* f;
+  char file_path[256];
 
+  DEBUG(("in xrdp_font_create"));
+  g_snprintf(file_path, 255, "%s/%s", XRDP_SHARE_PATH, DEFAULT_FONT_NAME);
+  if (!g_file_exist(file_path))
+  {
+    g_writeln("xrdp_font_create: error font file [%s] does not exist",
+              file_path);
+    return 0;
+  }
+  file_size = g_file_get_size(file_path);
+  if (file_size < 1)
+  {
+    return 0;
+  }
   self = (struct xrdp_font*)g_malloc(sizeof(struct xrdp_font), 1);
   self->wm = wm;
   make_stream(s);
-  init_stream(s, 8192 * 2);
-  fd = g_file_open("Tahoma-10.fv1");
+  init_stream(s, file_size + 1024);
+  fd = g_file_open(file_path);
   if (fd != -1)
   {
-    b = g_file_read(fd, s->data, 8192 * 2);
+    b = g_file_read(fd, s->data, file_size + 1024);
     g_file_close(fd);
     if (b > 0)
     {
@@ -112,7 +127,8 @@ xrdp_font_create(struct xrdp_wm* wm)
         {
           /* shouldn't happen */
           g_writeln("error in xrdp_font_create, datasize wrong");
-          g_writeln("%d %d %d", f->width, f->height, datasize);
+          g_writeln("width %d height %d datasize %d index %d",
+                    f->width, f->height, datasize, index);
           break;
         }
         if (s_check_rem(s, datasize))
@@ -137,6 +153,7 @@ xrdp_font_create(struct xrdp_wm* wm)
   self->font_items[0].data = g_malloc(3 * 16, 0);
   g_memcpy(self->font_items[0].data, w_char, 3 * 16);
 */
+  DEBUG(("out xrdp_font_create"));
   return self;
 }
 
@@ -151,7 +168,7 @@ xrdp_font_delete(struct xrdp_font* self)
   {
     return;
   }
-  for (i = 0; i < 256; i++)
+  for (i = 0; i < NUM_FONTS; i++)
   {
     g_free(self->font_items[i].data);
   }

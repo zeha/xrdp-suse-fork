@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004-2007 Jay Sorg
+   Copyright (c) 2004-2008 Jay Sorg
 
    Permission is hereby granted, free of charge, to any person obtaining a
    copy of this software and associated documentation files (the "Software"),
@@ -27,11 +27,16 @@
 /* check endianess */
 #if defined(__sparc__) || defined(__PPC__) || defined(__ppc__)
 #define B_ENDIAN
-#elif __BYTE_ORDER == __LITTLE_ENDIAN
+#elif defined(__BYTE_ORDER)
+#if __BYTE_ORDER == __LITTLE_ENDIAN
 #define L_ENDIAN
 #elif __BYTE_ORDER == __BIG_ENDIAN
 #define B_ENDIAN
 #endif
+#else
+#define L_ENDIAN
+#endif
+
 /* check if we need to align data */
 #if defined(__sparc__) || defined(__alpha__) || defined(__hppa__) || \
     defined(__AIX__) || defined(__PPC__) || defined(__mips__) || \
@@ -48,7 +53,7 @@
 #define THREAD_CC
 #endif
 
-#if defined(__BORLANDC__)
+#if defined(__BORLANDC__) || defined(_WIN32)
 #define APP_CC __fastcall
 #define DEFAULT_CC __cdecl
 #else
@@ -57,7 +62,11 @@
 #endif
 
 #if defined(_WIN32)
+#if defined(__BORLANDC__)
 #define EXPORT_CC _export __cdecl
+#else
+#define EXPORT_CC
+#endif
 #else
 #define EXPORT_CC
 #endif
@@ -71,6 +80,23 @@ typedef signed short tsi16;
 typedef int ti32;
 typedef unsigned int tui32;
 typedef signed int tsi32;
+#if defined(_WIN64)
+/* Microsoft's VC++ compiler uses the more backwards-compatible LLP64 model.
+   Most other 64 bit compilers(Solaris, AIX, HP, Linux, Mac OS X) use
+   the LP64 model.
+   long is 32 bits in LLP64 model, 64 bits in LP64 model. */
+typedef __int64 tbus;
+#else
 typedef long tbus;
+#endif
+typedef tbus thandle;
+/* wide char, socket */
+#if defined(_WIN32)
+typedef unsigned short twchar;
+typedef unsigned int tsock;
+#else
+typedef int twchar;
+typedef int tsock;
+#endif
 
 #endif

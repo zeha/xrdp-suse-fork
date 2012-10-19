@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004-2007 Jay Sorg
+   Copyright (c) 2004-2008 Jay Sorg
 
    Permission is hereby granted, free of charge, to any person obtaining a
    copy of this software and associated documentation files (the "Software"),
@@ -30,23 +30,25 @@
 
 int APP_CC
 tc_thread_create(THREAD_RV (THREAD_CC * start_routine)(void*), void* arg);
-long APP_CC
+tbus APP_CC
 tc_get_threadid(void);
-long APP_CC
+int APP_CC
+tc_threadid_equal(tbus tid1, tbus tid2);
+tbus APP_CC
 tc_mutex_create(void);
 void APP_CC
-tc_mutex_delete(long mutex);
+tc_mutex_delete(tbus mutex);
 int APP_CC
-tc_mutex_lock(long mutex);
+tc_mutex_lock(tbus mutex);
 int APP_CC
-tc_mutex_unlock(long mutex);
-long APP_CC
+tc_mutex_unlock(tbus mutex);
+tbus APP_CC
 tc_sem_create(int init_count);
 void APP_CC
-tc_sem_delete(long sem);
+tc_sem_delete(tbus sem);
 int APP_CC
-tc_sem_dec(long sem);
+tc_sem_dec(tbus sem);
 int APP_CC
-tc_sem_inc(long sem);
+tc_sem_inc(tbus sem);
 
 #endif

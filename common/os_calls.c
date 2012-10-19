@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004-2007 Jay Sorg
+   Copyright (c) 2004-2008 Jay Sorg
 
    Permission is hereby granted, free of charge, to any person obtaining a
    copy of this software and associated documentation files (the "Software"),
@@ -24,6 +24,9 @@
    put all the os / arch define in here you want
 */
 
+#if defined(HAVE_CONFIG_H)
+#include "config_ac.h"
+#endif
 #if defined(_WIN32)
 #include <windows.h>
 #include <winsock.h>
@@ -39,6 +42,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/time.h>
+#include <sys/times.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
@@ -56,6 +60,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <locale.h>
 
 #include "os_calls.h"
 #include "arch.h"
@@ -75,6 +80,27 @@ extern char** environ;
 #endif
 
 /*****************************************************************************/
+void APP_CC
+g_init(void)
+{
+#if defined(_WIN32)
+  WSADATA wsadata;
+
+  WSAStartup(2, &wsadata);
+#endif
+  setlocale(LC_CTYPE, "");
+}
+
+/*****************************************************************************/
+void APP_CC
+g_deinit(void)
+{
+#if defined(_WIN32)
+  WSACleanup();
+#endif
+}
+
+/*****************************************************************************/
 /* allocate memory, returns a pointer to it, size bytes are allocated,
    if zero is non zero, each byte will be set to zero */
 void* APP_CC
@@ -85,7 +111,10 @@ g_malloc(int size, int zero)
   rv = (char*)malloc(size);
   if (zero)
   {
-    memset(rv, 0, size);
+    if (rv != 0)
+    {
+      memset(rv, 0, size);
+    }
   }
   return rv;
 }
@@ -226,40 +255,75 @@ g_getchar(void)
 int APP_CC
 g_tcp_set_no_delay(int sck)
 {
-  int i;
-
-  i = 1;
 #if defined(_WIN32)
-  setsockopt(sck, IPPROTO_TCP, TCP_NODELAY, (char*)&i, sizeof(i));
+  int option_value;
+  int option_len;
 #else
-  setsockopt(sck, IPPROTO_TCP, TCP_NODELAY, (void*)&i, sizeof(i));
+  int option_value;
+  unsigned int option_len;
 #endif
+
+  option_len = sizeof(option_value);
+  /* SOL_TCP IPPROTO_TCP */
+  if (getsockopt(sck, IPPROTO_TCP, TCP_NODELAY, (char*)&option_value,
+                 &option_len) == 0)
+  {
+    if (option_value == 0)
+    {
+      option_value = 1;
+      option_len = sizeof(option_value);
+      setsockopt(sck, IPPROTO_TCP, TCP_NODELAY, (char*)&option_value,
+                 option_len);
+    }
+  }
   return 0;
 }
 
 /*****************************************************************************/
+/* returns a newly created socket or -1 on error */
 int APP_CC
 g_tcp_socket(void)
 {
-  int rv;
-  int i;
-
-  rv = socket(PF_INET, SOCK_STREAM, 0);
 #if defined(_WIN32)
-  i = 1;
-  setsockopt(rv, IPPROTO_TCP, TCP_NODELAY, (char*)&i, sizeof(i));
-  i = 1;
-  setsockopt(rv, SOL_SOCKET, SO_REUSEADDR, (char*)&i, sizeof(i));
-  i = 8192 * 2;
-  setsockopt(rv, SOL_SOCKET, SO_SNDBUF, (char*)&i, sizeof(i));
+  int rv;
+  int option_value;
+  int option_len;
 #else
-  i = 1;
-  setsockopt(rv, IPPROTO_TCP, TCP_NODELAY, (void*)&i, sizeof(i));
-  i = 1;
-  setsockopt(rv, SOL_SOCKET, SO_REUSEADDR, (void*)&i, sizeof(i));
-  i = 8192 * 2;
-  setsockopt(rv, SOL_SOCKET, SO_SNDBUF, (void*)&i, sizeof(i));
+  int rv;
+  int option_value;
+  unsigned int option_len;
 #endif
+
+  /* in win32 a socket is an unsigned int, in linux, its an int */
+  rv = (int)socket(PF_INET, SOCK_STREAM, 0);
+  if (rv < 0)
+  {
+    return -1;
+  }
+  option_len = sizeof(option_value);
+  if (getsockopt(rv, SOL_SOCKET, SO_REUSEADDR, (char*)&option_value,
+                 &option_len) == 0)
+  {
+    if (option_value == 0)
+    {
+      option_value = 1;
+      option_len = sizeof(option_value);
+      setsockopt(rv, SOL_SOCKET, SO_REUSEADDR, (char*)&option_value,
+                 option_len);
+    }
+  }
+  option_len = sizeof(option_value);
+  if (getsockopt(rv, SOL_SOCKET, SO_SNDBUF, (char*)&option_value,
+                 &option_len) == 0)
+  {
+    if (option_value < (1024 * 32))
+    {
+      option_value = 1024 * 32;
+      option_len = sizeof(option_value);
+      setsockopt(rv, SOL_SOCKET, SO_SNDBUF, (char*)&option_value,
+                 option_len);
+    }
+  }
   return rv;
 }
 
@@ -291,6 +355,7 @@ g_tcp_close(int sck)
 }
 
 /*****************************************************************************/
+/* returns error, zero is good */
 int APP_CC
 g_tcp_connect(int sck, const char* address, const char* port)
 {
@@ -299,7 +364,7 @@ g_tcp_connect(int sck, const char* address, const char* port)
 
   g_memset(&s, 0, sizeof(struct sockaddr_in));
   s.sin_family = AF_INET;
-  s.sin_port = htons(atoi(port));
+  s.sin_port = htons((tui16)atoi(port));
   s.sin_addr.s_addr = inet_addr(address);
   if (s.sin_addr.s_addr == INADDR_NONE)
   {
@@ -339,6 +404,7 @@ g_tcp_set_non_blocking(int sck)
 }
 
 /*****************************************************************************/
+/* returns error, zero is good */
 int APP_CC
 g_tcp_bind(int sck, char* port)
 {
@@ -346,7 +412,7 @@ g_tcp_bind(int sck, char* port)
 
   memset(&s, 0, sizeof(struct sockaddr_in));
   s.sin_family = AF_INET;
-  s.sin_port = htons(atoi(port));
+  s.sin_port = htons((tui16)atoi(port));
   s.sin_addr.s_addr = INADDR_ANY;
   return bind(sck, (struct sockaddr*)&s, sizeof(struct sockaddr_in));
 }
@@ -368,6 +434,7 @@ g_tcp_local_bind(int sck, char* port)
 }
 
 /*****************************************************************************/
+/* returns error, zero is good */
 int APP_CC
 g_tcp_listen(int sck)
 {
@@ -554,11 +621,314 @@ g_tcp_select(int sck1, int sck2)
 }
 
 /*****************************************************************************/
+/* returns 0 on error */
+tbus APP_CC
+g_create_wait_obj(char* name)
+{
+#ifdef _WIN32
+  tbus obj;
+
+  obj = (tbus)CreateEvent(0, 1, 0, name);
+  return obj;
+#else
+  tbus obj;
+  struct sockaddr_un sa;
+  int len;
+  int sck;
+  int i;
+
+  sck = socket(PF_UNIX, SOCK_DGRAM, 0);
+  if (sck < 0)
+  {
+    return 0;
+  }
+  memset(&sa, 0, sizeof(sa));
+  sa.sun_family = AF_UNIX;
+  if ((name == 0) || (strlen(name) == 0))
+  {
+    g_random((char*)&i, sizeof(i));
+    sprintf(sa.sun_path, "/tmp/auto%8.8x", i);
+    while (g_file_exist(sa.sun_path))
+    {
+      g_random((char*)&i, sizeof(i));
+      sprintf(sa.sun_path, "/tmp/auto%8.8x", i);
+    }
+  }
+  else
+  {
+    sprintf(sa.sun_path, "/tmp/%s", name);
+  }
+  unlink(sa.sun_path);
+  len = sizeof(sa);
+  if (bind(sck, (struct sockaddr*)&sa, len) < 0)
+  {
+    close(sck);
+    return 0;
+  }
+  obj = (tbus)sck;
+  return obj;
+#endif
+}
+
+/*****************************************************************************/
+/* returns 0 on error */
+tbus APP_CC
+g_create_wait_obj_from_socket(tbus socket, int write)
+{
+#ifdef _WIN32
+  /* Create and return corresponding event handle for WaitForMultipleObjets */
+  WSAEVENT event;
+  long lnetevent;
+
+  event = WSACreateEvent();
+  lnetevent = (write ? FD_WRITE : FD_READ) | FD_CLOSE;
+  if (WSAEventSelect(socket, event, lnetevent) == 0)
+  {
+    return (tbus)event;
+  }
+  else
+  {
+    return 0;
+  }
+#else
+  return socket;
+#endif
+}
+
+/*****************************************************************************/
+void APP_CC
+g_delete_wait_obj_from_socket(tbus wait_obj)
+{
+#ifdef _WIN32
+  if (wait_obj == 0)
+  {
+    return;
+  }
+  WSACloseEvent((HANDLE)wait_obj);
+#else
+#endif
+}
+
+/*****************************************************************************/
+/* returns error */
+int APP_CC
+g_set_wait_obj(tbus obj)
+{
+#ifdef _WIN32
+  if (obj == 0)
+  {
+    return 0;
+  }
+  SetEvent((HANDLE)obj);
+  return 0;
+#else
+  socklen_t sa_size;
+  int s;
+  struct sockaddr_un sa;
+
+  if (obj == 0)
+  {
+    return 0;
+  }
+  if (g_tcp_can_recv((int)obj, 0))
+  {
+    /* already signalled */
+    return 0;
+  }
+  sa_size = sizeof(sa);
+  if (getsockname((int)obj, (struct sockaddr*)&sa, &sa_size) < 0)
+  {
+    return 1;
+  }
+  s = socket(PF_UNIX, SOCK_DGRAM, 0);
+  if (s < 0)
+  {
+    return 1;
+  }
+  sendto(s, "sig", 4, 0, (struct sockaddr*)&sa, sa_size);
+  close(s);
+  return 0;
+#endif
+}
+
+/*****************************************************************************/
+/* returns error */
+int APP_CC
+g_reset_wait_obj(tbus obj)
+{
+#ifdef _WIN32
+  if (obj == 0)
+  {
+    return 0;
+  }
+  ResetEvent((HANDLE)obj);
+  return 0;
+#else
+  char buf[64];
+
+  if (obj == 0)
+  {
+    return 0;
+  }
+  while (g_tcp_can_recv((int)obj, 0))
+  {
+    recvfrom((int)obj, &buf, 64, 0, 0, 0);
+  }
+  return 0;
+#endif
+}
+
+/*****************************************************************************/
+/* returns boolean */
+int APP_CC
+g_is_wait_obj_set(tbus obj)
+{
+#ifdef _WIN32
+  if (obj == 0)
+  {
+    return 0;
+  }
+  if (WaitForSingleObject((HANDLE)obj, 0) == WAIT_OBJECT_0)
+  {
+    return 1;
+  }
+  return 0;
+#else
+  if (obj == 0)
+  {
+    return 0;
+  }
+  return g_tcp_can_recv((int)obj, 0);
+#endif
+}
+
+/*****************************************************************************/
+/* returns error */
+int APP_CC
+g_delete_wait_obj(tbus obj)
+{
+#ifdef _WIN32
+  if (obj == 0)
+  {
+    return 0;
+  }
+  /* Close event handle */
+  CloseHandle((HANDLE)obj);
+  return 0;
+#else
+  socklen_t sa_size;
+  struct sockaddr_un sa;
+
+  if (obj == 0)
+  {
+    return 0;
+  }
+  sa_size = sizeof(sa);
+  if (getsockname((int)obj, (struct sockaddr*)&sa, &sa_size) < 0)
+  {
+    return 1;
+  }
+  close((int)obj);
+  unlink(sa.sun_path);
+  return 0;
+#endif
+}
+
+/*****************************************************************************/
+/* returns error */
+int APP_CC
+g_obj_wait(tbus* read_objs, int rcount, tbus* write_objs, int wcount,
+           int mstimeout)
+{
+#ifdef _WIN32
+  HANDLE handles[256];
+  DWORD count;
+  DWORD error;
+  int j;
+  int i;
+
+  j = 0;
+  count = rcount + wcount;
+  for (i = 0; i < rcount; i++)
+  {
+    handles[j++] = (HANDLE)(read_objs[i]);
+  }
+  for (i = 0; i < wcount; i++)
+  {
+    handles[j++] = (HANDLE)(write_objs[i]);
+  }
+  if (mstimeout < 1)
+  {
+    mstimeout = INFINITE;
+  }
+  error = WaitForMultipleObjects(count, handles, FALSE, mstimeout);
+  if (error == WAIT_FAILED)
+  {
+    return 1;
+  }
+  return 0;
+#else
+  fd_set rfds;
+  fd_set wfds;
+  struct timeval time;
+  struct timeval* ptime;
+  int i;
+  int max;
+  int sck;
+
+  max = 0;
+  if (mstimeout < 1)
+  {
+    ptime = 0;
+  }
+  else
+  {
+    time.tv_sec = mstimeout / 1000;
+    time.tv_usec = (mstimeout % 1000) * 1000;
+    ptime = &time;
+  }
+  FD_ZERO(&rfds);
+  FD_ZERO(&wfds);
+  for (i = 0; i < rcount; i++)
+  {
+    sck = (int)(read_objs[i]);
+    FD_SET(sck, &rfds);
+    if (sck > max)
+    {
+      max = sck;
+    }
+  }
+  for (i = 0; i < wcount; i++)
+  {
+    sck = (int)(write_objs[i]);
+    FD_SET(sck, &wfds);
+    if (sck > max)
+    {
+      max = sck;
+    }
+  }
+  i = select(max + 1, &rfds, &wfds, 0, ptime);
+  if (i < 0)
+  {
+    return 1;
+  }
+  return 0;
+#endif
+}
+
+/*****************************************************************************/
 void APP_CC
 g_random(char* data, int len)
 {
 #if defined(_WIN32)
-  memset(data, 0x44, len);
+  int index;
+
+  srand(g_time1());
+  for (index = 0; index < len; index++)
+  {
+    data[index] = (char)rand(); /* rand returns a number between 0 and
+                                   RAND_MAX */
+  }
 #else
   int fd;
 
@@ -596,9 +966,9 @@ int APP_CC
 g_file_open(const char* file_name)
 {
 #if defined(_WIN32)
-  return (int)CreateFile(file_name, GENERIC_READ | GENERIC_WRITE,
-                         FILE_SHARE_READ | FILE_SHARE_WRITE,
-                         0, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+  return (int)CreateFileA(file_name, GENERIC_READ | GENERIC_WRITE,
+                          FILE_SHARE_READ | FILE_SHARE_WRITE,
+                          0, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
 #else
   int rv;
 
@@ -773,7 +1143,7 @@ char* APP_CC
 g_get_current_dir(char* dirname, int maxlen)
 {
 #if defined(_WIN32)
-  GetCurrentDirectory(maxlen, dirname);
+  GetCurrentDirectoryA(maxlen, dirname);
   return 0;
 #else
   getcwd(dirname, maxlen);
@@ -787,7 +1157,7 @@ int APP_CC
 g_set_current_dir(char* dirname)
 {
 #if defined(_WIN32)
-  if (SetCurrentDirectory(dirname))
+  if (SetCurrentDirectoryA(dirname))
   {
     return 0;
   }
@@ -840,7 +1210,7 @@ int APP_CC
 g_create_dir(const char* dirname)
 {
 #if defined(_WIN32)
-  return CreateDirectory(dirname, 0); // test this
+  return CreateDirectoryA(dirname, 0); // test this
 #else
   return mkdir(dirname, (mode_t)-1) == 0;
 #endif
@@ -852,7 +1222,7 @@ int APP_CC
 g_remove_dir(const char* dirname)
 {
 #if defined(_WIN32)
-  return RemoveDirectory(dirname); // test this
+  return RemoveDirectoryA(dirname); // test this
 #else
   return rmdir(dirname) == 0;
 #endif
@@ -864,9 +1234,30 @@ int APP_CC
 g_file_delete(const char* filename)
 {
 #if defined(_WIN32)
-  return DeleteFile(filename);
+  return DeleteFileA(filename);
 #else
   return unlink(filename) != -1;
+#endif
+}
+
+/*****************************************************************************/
+/* returns file size, -1 on error */
+int APP_CC
+g_file_get_size(const char* filename)
+{
+#if defined(_WIN32)
+  return -1;
+#else
+  struct stat st;
+
+  if (stat(filename, &st) == 0)
+  {
+    return (int)(st.st_size);
+  }
+  else
+  {
+    return -1;
+  }
 #endif
 }
 
@@ -995,6 +1386,84 @@ g_atoi(char* str)
 
 /*****************************************************************************/
 int APP_CC
+g_htoi(char* str)
+{
+  int len;
+  int index;
+  int rv;
+  int val;
+  int shift;
+
+  rv = 0;
+  len = strlen(str);
+  index = len - 1;
+  shift = 0;
+  while (index >= 0)
+  {
+    val = 0;
+    switch (str[index])
+    {
+      case '1':
+        val = 1;
+        break;
+      case '2':
+        val = 2;
+        break;
+      case '3':
+        val = 3;
+        break;
+      case '4':
+        val = 4;
+        break;
+      case '5':
+        val = 5;
+        break;
+      case '6':
+        val = 6;
+        break;
+      case '7':
+        val = 7;
+        break;
+      case '8':
+        val = 8;
+        break;
+      case '9':
+        val = 9;
+        break;
+      case 'a':
+      case 'A':
+        val = 10;
+        break;
+      case 'b':
+      case 'B':
+        val = 11;
+        break;
+      case 'c':
+      case 'C':
+        val = 12;
+        break;
+      case 'd':
+      case 'D':
+        val = 13;
+        break;
+      case 'e':
+      case 'E':
+        val = 14;
+        break;
+      case 'f':
+      case 'F':
+        val = 15;
+        break;
+    }
+    rv = rv | (val << shift);
+    index--;
+    shift += 4;
+  }
+  return rv;
+}
+
+/*****************************************************************************/
+int APP_CC
 g_pos(char* str, const char* to_find)
 {
   char* pp;
@@ -1008,11 +1477,154 @@ g_pos(char* str, const char* to_find)
 }
 
 /*****************************************************************************/
+int APP_CC
+g_mbstowcs(twchar* dest, const char* src, int n)
+{
+  wchar_t* ldest;
+  int rv;
+
+  ldest = (wchar_t*)dest;
+  rv = mbstowcs(ldest, src, n);
+  return rv;
+}
+
+/*****************************************************************************/
+int APP_CC
+g_wcstombs(char* dest, const twchar* src, int n)
+{
+  const wchar_t* lsrc;
+  int rv;
+
+  lsrc = (const wchar_t*)src;
+  rv = wcstombs(dest, lsrc, n);
+  return rv;
+}
+
+/*****************************************************************************/
+/* returns error */
+/* trim spaces and tabs, anything <= space */
+/* trim_flags 1 trim left, 2 trim right, 3 trim both, 4 trim through */
+/* this will always shorten the string or not change it */
+int APP_CC
+g_strtrim(char* str, int trim_flags)
+{
+  int index;
+  int len;
+  int text1_index;
+  int got_char;
+  wchar_t* text;
+  wchar_t* text1;
+
+  len = mbstowcs(0, str, 0);
+  if (len < 1)
+  {
+    return 0;
+  }
+  if ((trim_flags < 1) || (trim_flags > 4))
+  {
+    return 1;
+  }
+  text = (wchar_t*)malloc(len * sizeof(wchar_t) + 8);
+  text1 = (wchar_t*)malloc(len * sizeof(wchar_t) + 8);
+  text1_index = 0;
+  mbstowcs(text, str, len + 1);
+  switch (trim_flags)
+  {
+    case 4: /* trim through */
+      for (index = 0; index < len; index++)
+      {
+        if (text[index] > 32)
+        {
+          text1[text1_index] = text[index];
+          text1_index++;
+        }
+      }
+      text1[text1_index] = 0;
+      break;
+    case 3: /* trim both */
+      got_char = 0;
+      for (index = 0; index < len; index++)
+      {
+        if (got_char)
+        {
+          text1[text1_index] = text[index];
+          text1_index++;
+        }
+        else
+        {
+          if (text[index] > 32)
+          {
+            text1[text1_index] = text[index];
+            text1_index++;
+            got_char = 1;
+          }
+        }
+      }
+      text1[text1_index] = 0;
+      len = text1_index;
+      /* trim right */
+      for (index = len - 1; index >= 0; index--)
+      {
+        if (text1[index] > 32)
+        {
+          break;
+        }
+      }
+      text1_index = index + 1;
+      text1[text1_index] = 0;
+      break;
+    case 2: /* trim right */
+      /* copy it */
+      for (index = 0; index < len; index++)
+      {
+        text1[text1_index] = text[index];
+        text1_index++;
+      }
+      /* trim right */
+      for (index = len - 1; index >= 0; index--)
+      {
+        if (text1[index] > 32)
+        {
+          break;
+        }
+      }
+      text1_index = index + 1;
+      text1[text1_index] = 0;
+      break;
+    case 1: /* trim left */
+      got_char = 0;
+      for (index = 0; index < len; index++)
+      {
+        if (got_char)
+        {
+          text1[text1_index] = text[index];
+          text1_index++;
+        }
+        else
+        {
+          if (text[index] > 32)
+          {
+            text1[text1_index] = text[index];
+            text1_index++;
+            got_char = 1;
+          }
+        }
+      }
+      text1[text1_index] = 0;
+      break;
+  }
+  wcstombs(str, text1, text1_index + 1);
+  free(text);
+  free(text1);
+  return 0;
+}
+
+/*****************************************************************************/
 long APP_CC
 g_load_library(char* in)
 {
 #if defined(_WIN32)
-  return (long)LoadLibrary(in);
+  return (long)LoadLibraryA(in);
 #else
   return (long)dlopen(in, RTLD_LOCAL | RTLD_LAZY);
 #endif
@@ -1050,6 +1662,7 @@ g_get_proc_address(long lib, const char* name)
 }
 
 /*****************************************************************************/
+/* does not work in win32 */
 int APP_CC
 g_system(char* aexec)
 {
@@ -1061,6 +1674,7 @@ g_system(char* aexec)
 }
 
 /*****************************************************************************/
+/* does not work in win32 */
 char* APP_CC
 g_get_strerror(void)
 {
@@ -1072,6 +1686,7 @@ g_get_strerror(void)
 }
 
 /*****************************************************************************/
+/* does not work in win32 */
 int APP_CC
 g_execvp(const char* p1, char* args[])
 {
@@ -1083,6 +1698,7 @@ g_execvp(const char* p1, char* args[])
 }
 
 /*****************************************************************************/
+/* does not work in win32 */
 int APP_CC
 g_execlp3(const char* a1, const char* a2, const char* a3)
 {
@@ -1094,6 +1710,7 @@ g_execlp3(const char* a1, const char* a2, const char* a3)
 }
 
 /*****************************************************************************/
+/* does not work in win32 */
 void APP_CC
 g_signal(int sig_num, void (*func)(int))
 {
@@ -1104,6 +1721,7 @@ g_signal(int sig_num, void (*func)(int))
 }
 
 /*****************************************************************************/
+/* does not work in win32 */
 void APP_CC
 g_signal_child_stop(void (*func)(int))
 {
@@ -1114,6 +1732,7 @@ g_signal_child_stop(void (*func)(int))
 }
 
 /*****************************************************************************/
+/* does not work in win32 */
 void APP_CC
 g_unset_signals(void)
 {
@@ -1127,6 +1746,7 @@ g_unset_signals(void)
 }
 
 /*****************************************************************************/
+/* does not work in win32 */
 int APP_CC
 g_fork(void)
 {
@@ -1138,6 +1758,7 @@ g_fork(void)
 }
 
 /*****************************************************************************/
+/* does not work in win32 */
 int APP_CC
 g_setgid(int pid)
 {
@@ -1150,17 +1771,33 @@ g_setgid(int pid)
 
 /*****************************************************************************/
 /* returns error, zero is success, non zero is error */
+/* does not work in win32 */
 int APP_CC
 g_initgroups(const char* user, int gid)
 {
 #if defined(_WIN32)
   return 0;
 #else
-  return initgroups(user ,gid);
+  return initgroups(user, gid);
 #endif
 }
-  
+
 /*****************************************************************************/
+/* does not work in win32 */
+/* returns user id */
+int APP_CC
+g_getuid(void)
+{
+#if defined(_WIN32)
+  return 0;
+#else
+  return getuid();
+#endif
+}
+
+/*****************************************************************************/
+/* does not work in win32 */
+/* On success, zero is returned. On error, -1 is returned */
 int APP_CC
 g_setuid(int pid)
 {
@@ -1172,6 +1809,7 @@ g_setuid(int pid)
 }
 
 /*****************************************************************************/
+/* does not work in win32 */
 int APP_CC
 g_waitchild(void)
 {
@@ -1185,6 +1823,7 @@ g_waitchild(void)
 }
 
 /*****************************************************************************/
+/* does not work in win32 */
 int APP_CC
 g_waitpid(int pid)
 {
@@ -1196,6 +1835,7 @@ g_waitpid(int pid)
 }
 
 /*****************************************************************************/
+/* does not work in win32 */
 void APP_CC
 g_clearenv(void)
 {
@@ -1206,6 +1846,7 @@ g_clearenv(void)
 }
 
 /*****************************************************************************/
+/* does not work in win32 */
 int APP_CC
 g_setenv(const char* name, const char* value, int rewrite)
 {
@@ -1217,6 +1858,7 @@ g_setenv(const char* name, const char* value, int rewrite)
 }
 
 /*****************************************************************************/
+/* does not work in win32 */
 char* APP_CC
 g_getenv(const char* name)
 {
@@ -1236,6 +1878,7 @@ g_exit(int exit_code)
 }
 
 /*****************************************************************************/
+/* does not work in win32 */
 int APP_CC
 g_getpid(void)
 {
@@ -1247,6 +1890,7 @@ g_getpid(void)
 }
 
 /*****************************************************************************/
+/* does not work in win32 */
 int APP_CC
 g_sigterm(int pid)
 {
@@ -1259,6 +1903,7 @@ g_sigterm(int pid)
 
 /*****************************************************************************/
 /* returns 0 if ok */
+/* does not work in win32 */
 int APP_CC
 g_getuser_info(const char* username, int* gid, int* uid, char* shell,
                char* dir, char* gecos)
@@ -1299,6 +1944,7 @@ g_getuser_info(const char* username, int* gid, int* uid, char* shell,
 
 /*****************************************************************************/
 /* returns 0 if ok */
+/* does not work in win32 */
 int APP_CC
 g_getgroup_info(const char* groupname, int* gid)
 {
@@ -1323,6 +1969,7 @@ g_getgroup_info(const char* groupname, int* gid)
 /*****************************************************************************/
 /* returns error */
 /* if zero is returned, then ok is set */
+/* does not work in win32 */
 int APP_CC
 g_check_user_in_group(const char* username, int gid, int* ok)
 {
@@ -1354,7 +2001,9 @@ g_check_user_in_group(const char* username, int gid, int* ok)
 
 /*****************************************************************************/
 /* returns the time since the Epoch (00:00:00 UTC, January 1, 1970),
-   measured in seconds. */
+   measured in seconds.
+   for windows, returns the number of seconds since the machine was
+   started. */
 int APP_CC
 g_time1(void)
 {
@@ -1362,5 +2011,22 @@ g_time1(void)
   return GetTickCount() / 1000;
 #else
   return time(0);
+#endif
+}
+
+/*****************************************************************************/
+/* returns the number of milliseconds since the machine was
+   started. */
+int APP_CC
+g_time2(void)
+{
+#if defined(_WIN32)
+  return (int)GetTickCount();
+#else
+  struct tms tm;
+  clock_t num_ticks;
+
+  num_ticks = times(&tm);
+  return (int)(num_ticks * 10);
 #endif
 }

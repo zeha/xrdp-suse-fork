@@ -14,7 +14,7 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
    xrdp: A Remote Desktop Protocol server.
-   Copyright (C) Jay Sorg 2005-2007
+   Copyright (C) Jay Sorg 2005-2008
 */
 
 /**
@@ -31,7 +31,7 @@
 #include "grp.h"
 
 extern unsigned char g_fixedkey[8]; /* in sesman.c */
-extern struct config_sesman g_cfg; 
+extern struct config_sesman* g_cfg; 
 
 /******************************************************************************/
 int DEFAULT_CC
@@ -47,7 +47,8 @@ env_check_password_file(char* filename, char* password)
   fd = g_file_open(filename);
   if (fd == -1)
   {
-    log_message(LOG_LEVEL_WARNING, "can't read vnc password file - %s",
+    log_message(&(g_cfg->log), LOG_LEVEL_WARNING,
+                "can't read vnc password file - %s",
                 filename);
     return 1;
   }
@@ -98,24 +99,26 @@ env_set_user(char* username, char* passwd_file, int display)
       g_setenv("DISPLAY", text, 1);
       if (passwd_file != 0)
       {
-        if (0==g_cfg.auth_file_path)
+        if (0 == g_cfg->auth_file_path)
         {
-          /* if no auth_file_path is set, then we go for $HOME/.vnc/sesman_passwd */
+          /* if no auth_file_path is set, then we go for
+             $HOME/.vnc/sesman_username_passwd */
           g_mkdir(".vnc");
-          g_sprintf(passwd_file, "%s/.vnc/sesman_passwd", pw_dir);
+          g_sprintf(passwd_file, "%s/.vnc/sesman_%s_passwd", pw_dir, username);
         }
 	else
 	{
           /* we use auth_file_path as requested */
-          g_sprintf(passwd_file, g_cfg.auth_file_path, username);
+          g_sprintf(passwd_file, g_cfg->auth_file_path, username);
         }
-	LOG_DBG("pass file: %s", passwd_file);
+	LOG_DBG(&(g_cfg->log), "pass file: %s", passwd_file);
       }
     }
   }
   else
   {
-    log_message(LOG_LEVEL_ERROR, "error getting user info for user %s", username);
+    log_message(&(g_cfg->log), LOG_LEVEL_ERROR,
+                "error getting user info for user %s", username);
   }
   return error;
 }

@@ -14,7 +14,7 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
    xrdp: A Remote Desktop Protocol server.
-   Copyright (C) Jay Sorg 2005-2007
+   Copyright (C) Jay Sorg 2005-2008
 */
 
 /**
@@ -27,33 +27,23 @@
 
 #include "libscp_init.h"
 
+struct log_config* s_log;
+
 /* server API */
-int DEFAULT_CC 
-scp_init(void)
+int DEFAULT_CC
+scp_init(struct log_config* log)
 {
+  if (0 == log)
+  {
+    return 1;
+  }
+
+  s_log = log;
+
   scp_lock_init();
 
+  log_message(s_log, LOG_LEVEL_WARNING, "[init:%d] libscp initialized", __LINE__);
+
   return 0;
-}
-
-struct SCP_CONNECTION*
-scp_make_connection(int sck)
-{
-  struct SCP_CONNECTION* conn;
-  
-  conn = g_malloc(sizeof(struct SCP_CONNECTION), 0);
-
-  if (0 == conn)
-  {
-    return 0;
-  }
-  
-  conn->in_sck=sck;
-  make_stream(conn->in_s);
-  init_stream(conn->in_s, 8196);
-  make_stream(conn->out_s);
-  init_stream(conn->out_s, 8196);
-
-  return conn;
 }
 

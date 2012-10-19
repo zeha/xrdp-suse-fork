@@ -14,7 +14,7 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
    xrdp: A Remote Desktop Protocol server.
-   Copyright (C) Jay Sorg 2004-2007
+   Copyright (C) Jay Sorg 2004-2008
 
    secure layer
 
@@ -22,17 +22,20 @@
 
 #include "libxrdp.h"
 
-static char g_pad_54[40] =
+/* some compilers need unsigned char to avoid warnings */
+static tui8 g_pad_54[40] =
 { 54, 54, 54, 54, 54, 54, 54, 54, 54, 54, 54, 54, 54, 54, 54, 54,
   54, 54, 54, 54, 54, 54, 54, 54, 54, 54, 54, 54, 54, 54, 54, 54,
   54, 54, 54, 54, 54, 54, 54, 54 };
 
-static char g_pad_92[48] =
+/* some compilers need unsigned char to avoid warnings */
+static tui8 g_pad_92[48] =
 { 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92,
   92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92,
   92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92 };
 
-static char g_lic1[322] =
+/* some compilers need unsigned char to avoid warnings */
+static tui8 g_lic1[322] =
 { 0x80, 0x00, 0x3e, 0x01, 0x01, 0x02, 0x3e, 0x01,
   0x7b, 0x3c, 0x31, 0xa6, 0xae, 0xe8, 0x74, 0xf6,
   0xb4, 0xa5, 0x03, 0x90, 0xe7, 0xc2, 0xc7, 0x39,
@@ -75,74 +78,18 @@ static char g_lic1[322] =
   0x6f, 0x73, 0x6f, 0x66, 0x74, 0x2e, 0x63, 0x6f,
   0x6d, 0x00 };
 
-static char g_lic2[20] =
+/* some compilers need unsigned char to avoid warnings */
+static tui8 g_lic2[20] =
 { 0x80, 0x00, 0x10, 0x00, 0xff, 0x02, 0x10, 0x00,
   0x07, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
   0x28, 0x14, 0x00, 0x00 };
 
 /* mce */
-static char g_lic3[20] =
+/* some compilers need unsigned char to avoid warnings */
+static tui8 g_lic3[20] =
 { 0x80, 0x02, 0x10, 0x00, 0xff, 0x03, 0x10, 0x00,
   0x07, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
   0xf3, 0x99, 0x00, 0x00 };
-
-/*****************************************************************************/
-static void APP_CC
-hex_to_bin(char* in, char* out)
-{
-  int val;
-
-  val = 0;
-  switch (in[0])
-  {
-    case '1': val = 16; break;
-    case '2': val = 16 * 2; break;
-    case '3': val = 16 * 3; break;
-    case '4': val = 16 * 4; break;
-    case '5': val = 16 * 5; break;
-    case '6': val = 16 * 6; break;
-    case '7': val = 16 * 7; break;
-    case '8': val = 16 * 8; break;
-    case '9': val = 16 * 9; break;
-    case 'a': val = 16 * 10; break;
-    case 'A': val = 16 * 10; break;
-    case 'b': val = 16 * 11; break;
-    case 'B': val = 16 * 11; break;
-    case 'c': val = 16 * 12; break;
-    case 'C': val = 16 * 12; break;
-    case 'd': val = 16 * 13; break;
-    case 'D': val = 16 * 13; break;
-    case 'e': val = 16 * 14; break;
-    case 'E': val = 16 * 14; break;
-    case 'f': val = 16 * 15; break;
-    case 'F': val = 16 * 15; break;
-  }
-  switch (in[1])
-  {
-    case '1': val += 1; break;
-    case '2': val += 2; break;
-    case '3': val += 3; break;
-    case '4': val += 4; break;
-    case '5': val += 5; break;
-    case '6': val += 6; break;
-    case '7': val += 7; break;
-    case '8': val += 8; break;
-    case '9': val += 9; break;
-    case 'a': val += 10; break;
-    case 'A': val += 10; break;
-    case 'b': val += 11; break;
-    case 'B': val += 11; break;
-    case 'c': val += 12; break;
-    case 'C': val += 12; break;
-    case 'd': val += 13; break;
-    case 'D': val += 13; break;
-    case 'e': val += 14; break;
-    case 'E': val += 14; break;
-    case 'f': val += 15; break;
-    case 'F': val += 15; break;
-  }
-  *out = val;
-}
 
 /*****************************************************************************/
 static void APP_CC
@@ -151,6 +98,7 @@ hex_str_to_bin(char* in, char* out, int out_len)
   int in_index;
   int in_len;
   int out_index;
+  int val;
   char hex[16];
 
   in_len = g_strlen(in);
@@ -158,14 +106,15 @@ hex_str_to_bin(char* in, char* out, int out_len)
   in_index = 0;
   while (in_index <= (in_len - 4))
   {
-    if (in[in_index] == '0' && in[in_index + 1] == 'x')
+    if ((in[in_index] == '0') && (in[in_index + 1] == 'x'))
     {
       hex[0] = in[in_index + 2];
       hex[1] = in[in_index + 3];
       hex[2] = 0;
       if (out_index < out_len)
       {
-        hex_to_bin(hex, out + out_index);
+        val = g_htoi(hex);
+        out[out_index] = val;
       }
       out_index++;
     }
@@ -179,12 +128,6 @@ xrdp_sec_create(struct xrdp_rdp* owner, int sck, int crypt_level,
                 int channel_code)
 {
   struct xrdp_sec* self;
-  struct list* items;
-  struct list* values;
-  int fd;
-  int index;
-  char* item;
-  char* value;
 
   DEBUG((" in xrdp_sec_create"));
   self = (struct xrdp_sec*)g_malloc(sizeof(struct xrdp_sec), 1);
@@ -209,42 +152,8 @@ xrdp_sec_create(struct xrdp_rdp* owner, int sck, int crypt_level,
   self->channel_code = channel_code;
   self->decrypt_rc4_info = ssl_rc4_info_create();
   self->encrypt_rc4_info = ssl_rc4_info_create();
-  g_random(self->server_random, 32);
   self->mcs_layer = xrdp_mcs_create(self, sck, &self->client_mcs_data,
                                     &self->server_mcs_data);
-  fd = g_file_open(XRDP_KEY_FILE); /* rsakeys.ini */
-  if (fd > 0)
-  {
-    items = list_create();
-    items->auto_free = 1;
-    values = list_create();
-    values->auto_free = 1;
-    file_read_section(fd, "keys", items, values);
-    for (index = 0; index < items->count; index++)
-    {
-      item = (char*)list_get_item(items, index);
-      value = (char*)list_get_item(values, index);
-      if (g_strncasecmp(item, "pub_exp", 255) == 0)
-      {
-        hex_str_to_bin(value, self->pub_exp, 4);
-      }
-      else if (g_strncasecmp(item, "pub_mod", 255) == 0)
-      {
-        hex_str_to_bin(value, self->pub_mod, 64);
-      }
-      else if (g_strncasecmp(item, "pub_sig", 255) == 0)
-      {
-        hex_str_to_bin(value, self->pub_sig, 64);
-      }
-      else if (g_strncasecmp(item, "pri_exp", 255) == 0)
-      {
-        hex_str_to_bin(value, self->pri_exp, 64);
-      }
-    }
-    list_delete(items);
-    list_delete(values);
-    g_file_close(fd);
-  }
   self->chan_layer = xrdp_channel_create(self, self->mcs_layer);
   DEBUG((" out xrdp_sec_create"));
   return self;
@@ -313,12 +222,12 @@ xrdp_sec_update(char* key, char* update_key, int key_len)
   rc4_info = ssl_rc4_info_create();
   ssl_sha1_clear(sha1_info);
   ssl_sha1_transform(sha1_info, update_key, key_len);
-  ssl_sha1_transform(sha1_info, g_pad_54, 40);
+  ssl_sha1_transform(sha1_info, (char*)g_pad_54, 40);
   ssl_sha1_transform(sha1_info, key, key_len);
   ssl_sha1_complete(sha1_info, shasig);
   ssl_md5_clear(md5_info);
   ssl_md5_transform(md5_info, update_key, key_len);
-  ssl_md5_transform(md5_info, g_pad_92, 48);
+  ssl_md5_transform(md5_info, (char*)g_pad_92, 48);
   ssl_md5_transform(md5_info, shasig, 20);
   ssl_md5_complete(md5_info, key);
   ssl_rc4_set_key(rc4_info, key, key_len);
@@ -400,14 +309,18 @@ xrdp_sec_process_logon_info(struct xrdp_sec* self, struct stream* s)
   int len_password;
   int len_program;
   int len_directory;
+  int len_ip;
+  int len_dll;
+  int tzone;
+  char tmpdata[256];
 
-  //g_hexdump(s->p, 100);
   in_uint8s(s, 4);
   in_uint32_le(s, flags);
   DEBUG(("in xrdp_sec_process_logon_info flags $%x", flags));
   /* this is the first test that the decrypt is working */
   if ((flags & RDP_LOGON_NORMAL) != RDP_LOGON_NORMAL) /* 0x33 */
   {                                                   /* must be or error */
+    DEBUG(("xrdp_sec_process_logon_info: flags wrong, major error"));
     return 1;
   }
   if (flags & RDP_LOGON_LEAVE_AUDIO)
@@ -450,6 +363,20 @@ xrdp_sec_process_logon_info(struct xrdp_sec* self, struct stream* s)
   DEBUG(("program %s", self->rdp_layer->client_info.program));
   unicode_in(s, len_directory, self->rdp_layer->client_info.directory, 255);
   DEBUG(("directory %s", self->rdp_layer->client_info.directory));
+  if (flags & RDP_LOGON_BLOB)
+  {
+    in_uint8s(s, 2);                                    /* unknown */
+    in_uint16_le(s, len_ip);
+    unicode_in(s, len_ip - 2, tmpdata, 255);
+    in_uint16_le(s, len_dll);
+    unicode_in(s, len_dll - 2, tmpdata, 255);
+    in_uint32_le(s, tzone);                             /* len of timetone */
+    in_uint8s(s, 62);                                   /* skip */
+    in_uint8s(s, 22);                                   /* skip misc. */
+    in_uint8s(s, 62);                                   /* skip */
+    in_uint8s(s, 26);                                   /* skip stuff */
+    in_uint32_le(s, self->rdp_layer->client_info.rdp5_performanceflags);
+  }
   DEBUG(("out xrdp_sec_process_logon_info"));
   return 0;
 }
@@ -638,7 +565,7 @@ xrdp_sec_recv(struct xrdp_sec* self, struct stream* s, int* chan)
   if (flags & SEC_ENCRYPT) /* 0x08 */
   {
     in_uint8s(s, 8); /* signature */
-    xrdp_sec_decrypt(self, s->p, s->end - s->p);
+    xrdp_sec_decrypt(self, s->p, (int)(s->end - s->p));
   }
   if (flags & SEC_CLIENT_RANDOM) /* 0x01 */
   {
@@ -719,13 +646,13 @@ xrdp_sec_sign(struct xrdp_sec* self, char* out, int out_len,
   md5_info = ssl_md5_info_create();
   ssl_sha1_clear(sha1_info);
   ssl_sha1_transform(sha1_info, self->sign_key, self->rc4_key_len);
-  ssl_sha1_transform(sha1_info, g_pad_54, 40);
+  ssl_sha1_transform(sha1_info, (char*)g_pad_54, 40);
   ssl_sha1_transform(sha1_info, lenhdr, 4);
   ssl_sha1_transform(sha1_info, data, data_len);
   ssl_sha1_complete(sha1_info, shasig);
   ssl_md5_clear(md5_info);
   ssl_md5_transform(md5_info, self->sign_key, self->rc4_key_len);
-  ssl_md5_transform(md5_info, g_pad_92, 48);
+  ssl_md5_transform(md5_info, (char*)g_pad_92, 48);
   ssl_md5_transform(md5_info, shasig, 20);
   ssl_md5_complete(md5_info, md5sig);
   g_memcpy(out, md5sig, out_len);
@@ -745,7 +672,7 @@ xrdp_sec_send(struct xrdp_sec* self, struct stream* s, int chan)
   if (self->crypt_level > 1)
   {
     out_uint32_le(s, SEC_ENCRYPT);
-    datalen = (s->end - s->p) - 8;
+    datalen = (int)((s->end - s->p) - 8);
     xrdp_sec_sign(self, s->p, 8, s->p + 8, datalen);
     xrdp_sec_encrypt(self, s->p + 8, datalen);
   }
@@ -852,7 +779,7 @@ xrdp_sec_out_mcs_data(struct xrdp_sec* self)
   int num_channels;
   int index;
   int channel;
-  
+
   num_channels = self->mcs_layer->channel_list->count;
   num_channels_even = num_channels + (num_channels & 1);
   s = &self->server_mcs_data;
@@ -969,7 +896,49 @@ xrdp_sec_in_mcs_data(struct xrdp_sec* self)
 int APP_CC
 xrdp_sec_incoming(struct xrdp_sec* self)
 {
+  struct list* items;
+  struct list* values;
+  int index;
+  char* item;
+  char* value;
+
   DEBUG((" in xrdp_sec_incoming"));
+  g_random(self->server_random, 32);
+  items = list_create();
+  items->auto_free = 1;
+  values = list_create();
+  values->auto_free = 1;
+  if (file_by_name_read_section(XRDP_KEY_FILE, "keys", items, values) != 0)
+  {
+    /* this is a show stopper */
+    g_writeln("xrdp_sec_incoming: error reading %s file", XRDP_KEY_FILE);
+    list_delete(items);
+    list_delete(values);
+    return 1;
+  }
+  for (index = 0; index < items->count; index++)
+  {
+    item = (char*)list_get_item(items, index);
+    value = (char*)list_get_item(values, index);
+    if (g_strcasecmp(item, "pub_exp") == 0)
+    {
+      hex_str_to_bin(value, self->pub_exp, 4);
+    }
+    else if (g_strcasecmp(item, "pub_mod") == 0)
+    {
+      hex_str_to_bin(value, self->pub_mod, 64);
+    }
+    else if (g_strcasecmp(item, "pub_sig") == 0)
+    {
+      hex_str_to_bin(value, self->pub_sig, 64);
+    }
+    else if (g_strcasecmp(item, "pri_exp") == 0)
+    {
+      hex_str_to_bin(value, self->pri_exp, 64);
+    }
+  }
+  list_delete(items);
+  list_delete(values);
   if (xrdp_mcs_incoming(self->mcs_layer) != 0)
   {
     return 1;
@@ -977,10 +946,10 @@ xrdp_sec_incoming(struct xrdp_sec* self)
 #ifdef XRDP_DEBUG
   g_writeln("client mcs data received");
   g_hexdump(self->client_mcs_data.data,
-            self->client_mcs_data.end - self->client_mcs_data.data);
+            (int)(self->client_mcs_data.end - self->client_mcs_data.data));
   g_writeln("server mcs data sent");
   g_hexdump(self->server_mcs_data.data,
-            self->server_mcs_data.end - self->server_mcs_data.data);
+            (int)(self->server_mcs_data.end - self->server_mcs_data.data));
 #endif
   DEBUG((" out xrdp_sec_incoming"));
   xrdp_sec_in_mcs_data(self);

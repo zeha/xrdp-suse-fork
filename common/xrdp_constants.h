@@ -1,7 +1,7 @@
 /*
    rdesktop: A Remote Desktop Protocol client.
    Miscellaneous protocol constants
-   Copyright (C) Matthew Chapman 1999-2007
+   Copyright (C) Matthew Chapman 1999-2008
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -221,9 +221,24 @@
 #define RDP_CAPSET_COLCACHE            10
 #define RDP_CAPLEN_COLCACHE            0x08
 
+#define RDP_CAPSET_INPUT               13
+#define RDP_CAPLEN_INPUT               0x58
+
+#define RDP_CAPSET_FONT                14
+#define RDP_CAPLEN_FONT                0x04
+
+#define RDP_CAPSET_BRUSHCACHE          15
+#define RDP_CAPLEN_BRUSHCACHE          0x08
+
+#define RDP_CAPSET_BITMAP_OFFSCREEN    18
+#define RDP_CAPLEN_BITMAP_OFFSCREEN    0x08
+
 #define RDP_CAPSET_BMPCACHE2           19
 #define RDP_CAPLEN_BMPCACHE2           0x28
 #define BMPCACHE2_FLAG_PERSIST         ((long)1<<31)
+
+#define RDP_CAPSET_VIRCHAN             20
+#define RDP_CAPLEN_VIRCHAN             0x08
 
 #define RDP_SOURCE                     "MSTSC"
 
@@ -402,6 +417,7 @@
 #define RDP_ORDER_FONTCACHE     3
 #define RDP_ORDER_RAW_BMPCACHE2 4
 #define RDP_ORDER_BMPCACHE2     5
+#define RDP_ORDER_BRUSHCACHE    7
 
 /* drawable types */
 #define WND_TYPE_BITMAP  0
@@ -413,6 +429,7 @@
 #define WND_TYPE_LABEL   6
 #define WND_TYPE_COMBO   7
 #define WND_TYPE_SPECIAL 8
+#define WND_TYPE_LISTBOX 9
 
 /* button states */
 #define BUTTON_STATE_UP   0

@@ -14,7 +14,7 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
    xrdp: A Remote Desktop Protocol server.
-   Copyright (C) Jay Sorg 2004-2007
+   Copyright (C) Jay Sorg 2004-2008
 
    simple window manager
 
@@ -28,6 +28,7 @@ xrdp_wm_create(struct xrdp_process* owner,
                struct xrdp_client_info* client_info)
 {
   struct xrdp_wm* self;
+  char event_name[64];
 
   self = (struct xrdp_wm*)g_malloc(sizeof(struct xrdp_wm), 1);
   self->client_info = client_info;
@@ -38,13 +39,18 @@ xrdp_wm_create(struct xrdp_process* owner,
   self->screen->wm = self;
   self->pro_layer = owner;
   self->session = owner->session;
+  g_snprintf(event_name, 63, "xrdp_wm_login_mode_event_%8.8x",
+             owner->session_id);
+  self->login_mode_event = g_create_wait_obj(event_name);
   self->painter = xrdp_painter_create(self, self->session);
   self->cache = xrdp_cache_create(self, self->session, self->client_info);
   self->log = list_create();
   self->log->auto_free = 1;
-  self->key_down_list = list_create();
-  self->key_down_list->auto_free = 1;
   self->mm = xrdp_mm_create(self);
+  self->default_font = xrdp_font_create(self);
+  /* this will use built in keymap or load from file */
+  get_keymaps(self->session->client_info->keylayout, &(self->keymap));
+  xrdp_wm_set_login_mode(self, 0);
   return self;
 }
 
@@ -62,8 +68,9 @@ xrdp_wm_delete(struct xrdp_wm* self)
   xrdp_bitmap_delete(self->screen);
   /* free the log */
   list_delete(self->log);
-  /* key down list */
-  list_delete(self->key_down_list);
+  /* free default font */
+  xrdp_font_delete(self->default_font);
+  g_delete_wait_obj(self->login_mode_event);
   /* free self */
   g_free(self);
 }
@@ -164,6 +171,7 @@ xrdp_wm_pointer(struct xrdp_wm* self, char* data, char* mask, int x, int y)
 }
 
 /*****************************************************************************/
+/* returns error */
 int APP_CC
 xrdp_wm_load_pointer(struct xrdp_wm* self, char* file_name, char* data,
                      char* mask, int* x, int* y)
@@ -178,6 +186,12 @@ xrdp_wm_load_pointer(struct xrdp_wm* self, char* file_name, char* data,
   int palette[16];
   struct stream* fs;
 
+  if (!g_file_exist(file_name))
+  {
+    g_writeln("xrdp_wm_load_pointer: error pointer file [%s] does not exist",
+              file_name);
+    return 1;
+  }
   make_stream(fs);
   init_stream(fs, 8192);
   fd = g_file_open(file_name);
@@ -322,17 +336,23 @@ xrdp_wm_load_static_colors(struct xrdp_wm* self)
 }
 
 /*****************************************************************************/
+/* returns error */
 int APP_CC
 xrdp_wm_load_static_pointers(struct xrdp_wm* self)
 {
   struct xrdp_pointer_item pointer_item;
+  char file_path[256];
 
   DEBUG(("sending cursor"));
-  xrdp_wm_load_pointer(self, "cursor1.cur", pointer_item.data,
+  g_snprintf(file_path, 255, "%s/cursor1.cur", XRDP_SHARE_PATH);
+  g_memset(&pointer_item, 0, sizeof(pointer_item));
+  xrdp_wm_load_pointer(self, file_path, pointer_item.data,
                        pointer_item.mask, &pointer_item.x, &pointer_item.y);
   xrdp_cache_add_pointer_static(self->cache, &pointer_item, 1);
   DEBUG(("sending cursor"));
-  xrdp_wm_load_pointer(self, "cursor0.cur", pointer_item.data,
+  g_snprintf(file_path, 255, "%s/cursor0.cur", XRDP_SHARE_PATH);
+  g_memset(&pointer_item, 0, sizeof(pointer_item));
+  xrdp_wm_load_pointer(self, file_path, pointer_item.data,
                        pointer_item.mask, &pointer_item.x, &pointer_item.y);
   xrdp_cache_add_pointer_static(self->cache, &pointer_item, 0);
   return 0;
@@ -403,7 +423,7 @@ xrdp_wm_init(struct xrdp_wm* self)
             list_add_item(self->mm->login_values, (long)g_strdup(r));
           }
         }
-        self->login_mode = 2;
+        xrdp_wm_set_login_mode(self, 2);
       }
       list_delete(names);
       list_delete(values);
@@ -416,7 +436,7 @@ xrdp_wm_init(struct xrdp_wm* self)
     /* clear screen */
     xrdp_bitmap_invalidate(self->screen, 0);
     xrdp_wm_set_focused(self, self->login_window);
-    self->login_mode = 1;
+    xrdp_wm_set_login_mode(self, 1);
   }
   return 0;
 }
@@ -660,12 +680,74 @@ xrdp_wm_move_window(struct xrdp_wm* self, struct xrdp_bitmap* wnd,
 }
 
 /*****************************************************************************/
+static int APP_CC
+xrdp_wm_undraw_dragging_box(struct xrdp_wm* self, int do_begin_end)
+{
+  int boxx;
+  int boxy;
+
+  if (self == 0)
+  {
+    return 0;
+  }
+  if (self->dragging)
+  {
+    if (self->draggingxorstate)
+    {
+      if (do_begin_end)
+      {
+        xrdp_painter_begin_update(self->painter);
+      }
+      boxx = self->draggingx - self->draggingdx;
+      boxy = self->draggingy - self->draggingdy;
+      xrdp_wm_xor_pat(self, boxx, boxy, self->draggingcx, self->draggingcy);
+      self->draggingxorstate = 0;
+      if (do_begin_end)
+      {
+        xrdp_painter_end_update(self->painter);
+      }
+    }
+  }
+  return 0;
+}
+
+/*****************************************************************************/
+static int APP_CC
+xrdp_wm_draw_dragging_box(struct xrdp_wm* self, int do_begin_end)
+{
+  int boxx;
+  int boxy;
+
+  if (self == 0)
+  {
+    return 0;
+  }
+  if (self->dragging)
+  {
+    if (!self->draggingxorstate)
+    {
+      if (do_begin_end)
+      {
+        xrdp_painter_begin_update(self->painter);
+      }
+      boxx = self->draggingx - self->draggingdx;
+      boxy = self->draggingy - self->draggingdy;
+      xrdp_wm_xor_pat(self, boxx, boxy, self->draggingcx, self->draggingcy);
+      self->draggingxorstate = 1;
+      if (do_begin_end)
+      {
+        xrdp_painter_end_update(self->painter);
+      }
+    }
+  }
+  return 0;
+}
+
+/*****************************************************************************/
 int APP_CC
 xrdp_wm_mouse_move(struct xrdp_wm* self, int x, int y)
 {
   struct xrdp_bitmap* b;
-  int boxx;
-  int boxy;
 
   if (self == 0)
   {
@@ -692,18 +774,10 @@ xrdp_wm_mouse_move(struct xrdp_wm* self, int x, int y)
   if (self->dragging)
   {
     xrdp_painter_begin_update(self->painter);
-    boxx = self->draggingx - self->draggingdx;
-    boxy = self->draggingy - self->draggingdy;
-    if (self->draggingxorstate)
-    {
-      xrdp_wm_xor_pat(self, boxx, boxy, self->draggingcx, self->draggingcy);
-    }
+    xrdp_wm_undraw_dragging_box(self, 0);
     self->draggingx = x;
     self->draggingy = y;
-    boxx = self->draggingx - self->draggingdx;
-    boxy = self->draggingy - self->draggingdy;
-    xrdp_wm_xor_pat(self, boxx, boxy, self->draggingcx, self->draggingcy);
-    self->draggingxorstate = 1;
+    xrdp_wm_draw_dragging_box(self, 0);
     xrdp_painter_end_update(self->painter);
     return 0;
   }
@@ -991,60 +1065,14 @@ xrdp_wm_mouse_click(struct xrdp_wm* self, int x, int y, int but, int down)
 }
 
 /*****************************************************************************/
-static struct xrdp_key_down* APP_CC
-xrdp_get_key_down(struct xrdp_wm* self, int scan_code, int* index)
-{
-  int i;
-  struct xrdp_key_down* key_down;
-
-  for (i = 0; i < self->key_down_list->count; i++)
-  {
-    key_down = (struct xrdp_key_down*)list_get_item(self->key_down_list, i);
-    if (key_down != 0)
-    {
-      if (key_down->scan_code == scan_code)
-      {
-        if (index != 0)
-        {
-          *index = i;
-        }
-        return key_down;
-      }
-    }
-  }
-  return 0;
-}
-
-/*****************************************************************************/
-static void APP_CC
-xrdp_add_key_down(struct xrdp_wm* self, int param1, int param2,
-                  int scan_code,  int param4)
-{
-  struct xrdp_key_down* key_down;
-  if (xrdp_get_key_down(self, scan_code, 0) != 0)
-  {
-    return;
-  }
-  key_down = (struct xrdp_key_down*)g_malloc(sizeof(struct xrdp_key_down), 0);
-  key_down->scan_code = scan_code;
-  key_down->param1 = param1;
-  key_down->param2 = param2;
-  key_down->param4 = param4;
-  list_add_item(self->key_down_list, (long)key_down);
-}
-
-/*****************************************************************************/
 int APP_CC
 xrdp_wm_key(struct xrdp_wm* self, int device_flags, int scan_code)
 {
   int msg;
-  int key_down_index;
-  char c;
-  struct xrdp_key_down* key_down;
+  int c;
 
   /*g_printf("count %d\n", self->key_down_list->count);*/
   scan_code = scan_code % 128;
-  key_down = 0;
   if (self->popup_wnd != 0)
   {
     xrdp_wm_clear_popup(self);
@@ -1054,12 +1082,6 @@ xrdp_wm_key(struct xrdp_wm* self, int device_flags, int scan_code)
   {
     self->keys[scan_code] = 0;
     msg = WM_KEYUP;
-    key_down = xrdp_get_key_down(self, scan_code, &key_down_index);
-    /* if there was no key down, don't allow a key up */
-    if (key_down == 0)
-    {
-      return 0;
-    }
   }
   else /* key down */
   {
@@ -1082,38 +1104,19 @@ xrdp_wm_key(struct xrdp_wm* self, int device_flags, int scan_code)
   {
     if (self->mm->mod->mod_event != 0)
     {
-      if (msg == WM_KEYDOWN)
+      c = get_char_from_scan_code
+          (device_flags, scan_code, self->keys, self->caps_lock,
+           self->num_lock, self->scroll_lock,
+           &(self->keymap));
+      if (c != 0)
       {
-        c = get_char_from_scan_code(device_flags, scan_code, self->keys,
-                                    self->caps_lock,
-                                    self->num_lock,
-                                    self->scroll_lock,
-                                    self->session->client_info->keylayout);
-        if (c != 0)
-        {
-          self->mm->mod->mod_event(self->mm->mod, msg, (unsigned char)c,
-                                   0xffff, scan_code, device_flags);
-          xrdp_add_key_down(self, (unsigned char)c, 0xffff, scan_code,
-                            device_flags);
-        }
-        else
-        {
-          self->mm->mod->mod_event(self->mm->mod, msg, scan_code,
-                                   device_flags, scan_code, device_flags);
-          xrdp_add_key_down(self, scan_code, device_flags, scan_code,
-                            device_flags);
-        }
+        self->mm->mod->mod_event(self->mm->mod, msg, c,
+                                 0xffff, scan_code, device_flags);
       }
-      else /* key up */
+      else
       {
-        if (key_down != 0)
-        {
-          self->mm->mod->mod_event(self->mm->mod, msg, key_down->param1,
-                                   key_down->param2 | KBD_FLAG_UP,
-                                   key_down->scan_code,
-                                   key_down->param4 | KBD_FLAG_UP);
-          list_remove_item(self->key_down_list, key_down_index);
-        }
+        self->mm->mod->mod_event(self->mm->mod, msg, scan_code,
+                                 device_flags, scan_code, device_flags);
       }
     }
   }
@@ -1306,10 +1309,9 @@ callback(long id, int msg, long param1, long param2, long param3, long param4)
 /******************************************************************************/
 /* returns error */
 /* this gets called when there is nothing on any socket */
-int APP_CC
-xrdp_wm_idle(struct xrdp_wm* self)
+static int APP_CC
+xrdp_wm_login_mode_changed(struct xrdp_wm* self)
 {
-  g_sleep(10);
   if (self == 0)
   {
     return 0;
@@ -1317,21 +1319,24 @@ xrdp_wm_idle(struct xrdp_wm* self)
   if (self->login_mode == 0)
   {
     /* this is the inital state of the login window */
-    self->login_mode = 1; /* put the wm in login mode */
+    xrdp_wm_set_login_mode(self, 1); /* put the wm in login mode */
     list_clear(self->log);
     xrdp_wm_delete_all_childs(self);
+    self->dragging = 0;
     xrdp_wm_init(self);
   }
   else if (self->login_mode == 2)
   {
-    self->login_mode = 3; /* put the wm in connected mode */
+    xrdp_wm_set_login_mode(self, 3); /* put the wm in connected mode */
     xrdp_wm_delete_all_childs(self);
+    self->dragging = 0;
     xrdp_mm_connect(self->mm);
   }
   else if (self->login_mode == 10)
   {
     xrdp_wm_delete_all_childs(self);
-    self->login_mode = 11;
+    self->dragging = 0;
+    xrdp_wm_set_login_mode(self, 11);
   }
   return 0;
 }
@@ -1405,7 +1410,7 @@ xrdp_wm_log_wnd_notify(struct xrdp_bitmap* wnd,
       {
         /* make sure autologin is off */
         wm->session->client_info->rdp_autologin = 0;
-        wm->login_mode = 0; /* reset session */
+        xrdp_wm_set_login_mode(wm, 0); /* reset session */
       }
     }
   }
@@ -1414,7 +1419,7 @@ xrdp_wm_log_wnd_notify(struct xrdp_bitmap* wnd,
     painter = (struct xrdp_painter*)param1;
     if (painter != 0)
     {
-      painter->font->color = wnd->wm->black;
+      painter->fg_color = wnd->wm->black;
       for (index = 0; index < wnd->wm->log->count; index++)
       {
         text = (char*)list_get_item(wnd->wm->log, index);
@@ -1461,5 +1466,109 @@ xrdp_wm_log_msg(struct xrdp_wm* self, char* msg)
   xrdp_wm_set_focused(self, self->log_wnd);
   xrdp_bitmap_invalidate(self->log_wnd, 0);
   g_sleep(100);
+  return 0;
+}
+
+/*****************************************************************************/
+static int APP_CC
+xrdp_wm_mod_get_wait_objs(struct xrdp_wm* self,
+                          tbus* read_objs, int* rcount,
+                          tbus* write_objs, int* wcount, int* timeout)
+{
+  if (self->mm != 0)
+  {
+    if (self->mm->mod != 0)
+    {
+      if (self->mm->mod->mod_get_wait_objs != 0)
+      {
+        return self->mm->mod->mod_get_wait_objs
+               (self->mm->mod, read_objs, rcount,
+                write_objs, wcount, timeout);
+      }
+    }
+  }
+  return 0;
+}
+
+/*****************************************************************************/
+static int APP_CC
+xrdp_wm_mod_check_wait_objs(struct xrdp_wm* self)
+{
+  if (self->mm != 0)
+  {
+    if (self->mm->mod != 0)
+    {
+      if (self->mm->mod->mod_check_wait_objs != 0)
+      {
+        return self->mm->mod->mod_check_wait_objs(self->mm->mod);
+      }
+    }
+  }
+  return 0;
+}
+
+/*****************************************************************************/
+int APP_CC
+xrdp_wm_get_wait_objs(struct xrdp_wm* self, tbus* robjs, int* rc,
+                      tbus* wobjs, int* wc, int* timeout)
+{
+  int i;
+
+  if (self == 0)
+  {
+    return 0;
+  }
+  i = *rc;
+  robjs[i++] = self->login_mode_event;
+  if (self->mm != 0)
+  {
+    if (self->mm->sck_obj != 0)
+    {
+      robjs[i++] = self->mm->sck_obj;
+    }
+  }
+  *rc = i;
+  return xrdp_wm_mod_get_wait_objs(self, robjs, rc, wobjs, wc, timeout);
+}
+
+/******************************************************************************/
+int APP_CC
+xrdp_wm_check_wait_objs(struct xrdp_wm* self)
+{
+  int rv;
+
+  if (self == 0)
+  {
+    return 0;
+  }
+  rv = 0;
+  if (g_is_wait_obj_set(self->login_mode_event))
+  {
+    g_reset_wait_obj(self->login_mode_event);
+    xrdp_wm_login_mode_changed(self);
+  }
+  if (self->mm != 0)
+  {
+    if (self->mm->sck_obj != 0)
+    {
+      if (g_is_wait_obj_set(self->mm->sck_obj))
+      {
+        rv = xrdp_mm_signal(self->mm); 
+      }
+    }
+  }
+  if (rv == 0)
+  {
+    rv = xrdp_wm_mod_check_wait_objs(self);
+  }
+  return rv;
+}
+
+/*****************************************************************************/
+int APP_CC
+xrdp_wm_set_login_mode(struct xrdp_wm* self, int login_mode)
+{
+  self->login_mode = login_mode;
+  g_set_wait_obj(self->login_mode_event);
   return 0;
 }

@@ -14,7 +14,7 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
    xrdp: A Remote Desktop Protocol server.
-   Copyright (C) Jay Sorg 2004-2007
+   Copyright (C) Jay Sorg 2004-2008
 
    header file for use with libxrdp.so / xrdp.dll
 
@@ -60,6 +60,9 @@ struct xrdp_client_info
   int channel_code; /* 0 = no channels 1 = channels */
   int sound_code; /* 1 = leave sound at server */
   int is_mce;
+  int rdp5_performanceflags;
+  int brush_cache_code; /* 0 = no cache 1 = 8x8 standard cache
+                           2 = arbitrary dimensions */
 };
 
 struct xrdp_brush
@@ -206,5 +209,9 @@ libxrdp_get_channel_id(struct xrdp_session* session, char* name);
 int DEFAULT_CC
 libxrdp_send_to_channel(struct xrdp_session* session, int channel_id,
                         char* data, int data_len);
+int DEFAULT_CC
+libxrdp_orders_send_brush(struct xrdp_session* session,
+                          int width, int height, int bpp, int type,
+                          int size, char* data, int cache_id);
 
 #endif

@@ -14,7 +14,7 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
    xrdp: A Remote Desktop Protocol server.
-   Copyright (C) Jay Sorg 2004-2007
+   Copyright (C) Jay Sorg 2004-2008
 
    this is the interface to libxrdp
 
@@ -715,4 +715,15 @@ libxrdp_send_to_channel(struct xrdp_session* session, int channel_id,
   }
   free_stream(s);
   return 0;
+}
+
+/*****************************************************************************/
+int EXPORT_CC
+libxrdp_orders_send_brush(struct xrdp_session* session,
+                          int width, int height, int bpp, int type,
+                          int size, char* data, int cache_id)
+{
+  return xrdp_orders_send_brush((struct xrdp_orders*)session->orders,
+                                width, height, bpp, type, size, data,
+                                cache_id);
 }

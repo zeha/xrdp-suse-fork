@@ -14,7 +14,7 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
    xrdp: A Remote Desktop Protocol server.
-   Copyright (C) Jay Sorg 2005-2007
+   Copyright (C) Jay Sorg 2005-2008
 */
 
 /**
@@ -22,17 +22,21 @@
  * @file sesman.h
  * @brief Main include file
  * @author Jay Sorg
- * 
+ *
  */
 
 #ifndef SESMAN_H
 #define SESMAN_H
 
+#if defined(HAVE_CONFIG_H)
+#include "config_ac.h"
+#endif
 #include "d3des.h"
 #include "arch.h"
 #include "parse.h"
 #include "os_calls.h"
 #include "log.h"
+#include "file_loc.h"
 #include "env.h"
 #include "auth.h"
 #include "config.h"
@@ -48,10 +52,6 @@
 
 #ifndef SESMAN_PID_FILE
   #define SESMAN_PID_FILE "./sesman.pid"
-#endif
-
-#ifndef SESMAN_SESSVC_FILE
-  #define SESMAN_SESSVC_FILE "sessvc"
 #endif
 
 #endif

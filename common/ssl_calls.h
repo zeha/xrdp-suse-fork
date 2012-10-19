@@ -14,7 +14,7 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
    xrdp: A Remote Desktop Protocol server.
-   Copyright (C) Jay Sorg 2004-2007
+   Copyright (C) Jay Sorg 2004-2008
 
 */
 
@@ -54,5 +54,8 @@ ssl_md5_complete(void* md5_info, char* data);
 int APP_CC
 ssl_mod_exp(char* out, int out_len, char* in, int in_len,
             char* mod, int mod_len, char* exp, int exp_len);
+int APP_CC
+ssl_gen_key_xrdp1(int key_size_in_bits, char* exp, int exp_len,
+                  char* mod, int mod_len, char* pri, int pri_len);
 
 #endif
