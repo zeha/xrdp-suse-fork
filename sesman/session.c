@@ -48,6 +48,31 @@ extern struct config_sesman* g_cfg; /* config.h */
 struct session_chain* g_sessions = NULL;
 int g_session_count = 0;
 
+/* max to 1024 sessions */
+static int unused_displays [1024];
+
+static void
+set_unused_display (int display, int used)
+{
+  unused_displays [display - 10] = used;
+}
+
+static int
+get_unused_display ()
+{
+  int i;
+  if (g_session_count == 0) {
+    for (i = 0; i < g_cfg->sess.max_sessions; i++) {
+      unused_displays [i] = 0;
+    }
+    return 10;
+  } else {
+    for (i = 0; unused_displays [i] != 0; i++) {
+    }
+    return 10 + i;
+  }
+}
+
 /******************************************************************************/
 struct session_item* DEFAULT_CC
 session_get_bydata(char* name, int width, int height, int bpp)
@@ -510,7 +535,7 @@ for user %s denied", username);
     return 0;
   }
 
-  display = 10 + g_session_count;
+  display = get_unused_display ();
 
   /*THREAD-FIX unlock chain*/
   lock_chain_release();
@@ -1025,6 +1050,7 @@ for user %s denied", username);
     lock_chain_acquire();
     temp->next=g_sessions;
     g_sessions=temp;
+    set_unused_display (display, 1);
     g_session_count++;
     /*THERAD-FIX free the chain*/
     lock_chain_release();
@@ -1127,6 +1153,7 @@ session_kill(int pid)
         prev->next = tmp->next;
       }
       g_free(tmp);
+      set_unused_display (tmp->item->display, 0);
       g_session_count--;
       /*THREAD-FIX release chain lock */
       lock_chain_release();
