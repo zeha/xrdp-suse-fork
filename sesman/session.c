@@ -716,6 +716,8 @@ for user %s denied", username);
           /* these are the must have parameters */
           list_add_item(xserver_params, (long)g_strdup("Xdmx"));
           list_add_item(xserver_params, (long)g_strdup(screen));
+	  list_add_item(xserver_params, (long)g_strdup("-depth"));
+	  list_add_item(xserver_params, (long)g_strdup(depth));
 
 #ifndef _WIN32
 	  list_add_item(xserver_params, (long)g_strdup("-auth"));
@@ -724,6 +726,19 @@ for user %s denied", username);
 
           /* additional parameters from sesman.ini file */
           list_append_list_strdup(g_cfg->dmx_params, xserver_params, 0);
+
+          list_add_item(xserver_params, (long)g_strdup("--"));
+          list_add_item(xserver_params, (long)g_strdup(g_cfg->dmx_backend));
+
+          /* additional parameters from sesman.ini file */
+          list_append_list_strdup(g_cfg->dmx_backend_params, xserver_params, 0);
+          if (strstr (g_cfg->dmx_backend, "Xfake")) /* if the backend was Xfake, use the '-screen' param */
+          {
+            char geometry_depth [32];
+            g_sprintf(geometry_depth, "%dx%dx%d", width, height, bpp);
+            list_add_item(xserver_params, (long)g_strdup("-screen"));
+            list_add_item(xserver_params, (long)g_strdup(geometry_depth));  
+          }
 
 	  /* make sure it ends with a zero */
 	  list_add_item(xserver_params, 0);

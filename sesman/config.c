@@ -93,6 +93,7 @@ config_read(struct config_sesman* cfg)
   config_read_vnc_params(fd, cfg, param_n, param_v);
   config_read_rdp_params(fd, cfg, param_n, param_v);
   config_read_dmx_params(fd, cfg, param_n, param_v);
+  config_read_dmx_backend_params(fd, cfg, param_n, param_v);
 
   /* read logging config */
   config_read_logging(fd, &(cfg->log), param_n, param_v);
@@ -447,6 +448,39 @@ config_read_dmx_params(int file, struct config_sesman* cs, struct list* param_n,
 
   /* printing security config */
   g_printf("Xdmx parameters:\r\n");
+  for (i = 0; i < cs->dmx_params->count; i++)
+  {
+    g_printf("\tParameter %02d                   %s\r\n", i, (char*)list_get_item(cs->dmx_params, i));
+  }
+
+  return 0;
+}
+
+/******************************************************************************/
+int DEFAULT_CC
+config_read_dmx_backend_params(int file, struct config_sesman* cs, struct list* param_n,
+                       struct list* param_v)
+{
+  int i;
+  char *buf;
+
+  list_clear(param_v);
+  list_clear(param_n);
+  cs->dmx_backend=0;
+  cs->dmx_backend_params=list_create();
+  file_read_section(file, SESMAN_CFG_DMX_BACKEND_PARAMS, param_n, param_v);
+  for (i = 0; i < param_n->count; i++)
+  {
+    buf = (char*)list_get_item(param_n, i);
+    if (0 == g_strcasecmp(buf, SESMAN_CFG_DMX_BACKEND))
+    {
+      cs->dmx_backend = g_strdup((char*)list_get_item(param_v, i));
+    } else
+      list_add_item(cs->dmx_backend_params, (long)g_strdup((char*)list_get_item(param_v, i)));
+  }
+
+  /* printing security config */
+  g_printf("Xdmx backend [%s], its parameters:\r\n", cs->dmx_backend);
   for (i = 0; i < cs->dmx_params->count; i++)
   {
     g_printf("\tParameter %02d                   %s\r\n", i, (char*)list_get_item(cs->dmx_params, i));

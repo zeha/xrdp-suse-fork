@@ -54,6 +54,8 @@
 #define SESMAN_CFG_RDP_PARAMS        "X11rdp"
 #define SESMAN_CFG_VNC_PARAMS        "Xvnc"
 #define SESMAN_CFG_DMX_PARAMS        "Xdmx"
+#define SESMAN_CFG_DMX_BACKEND_PARAMS "XdmxBackend"
+#define SESMAN_CFG_DMX_BACKEND       "Backend"
 
 #define SESMAN_CFG_LOGGING           "Logging"
 #define SESMAN_CFG_LOG_FILE          "LogFile"
@@ -193,6 +195,16 @@ struct config_sesman
    */
   struct list* dmx_params;
   /**
+   * @var dmx_backend;
+   * @brief the backend which dmx choose
+   */
+  char *dmx_backend;
+  /**
+   * @var dmx_backend_params;
+   * @brief Xdmx backend additional parameter list
+   */
+  struct list* dmx_backend_params;
+  /**
    * @var log
    * @brief Log configuration struct
    */
@@ -319,5 +331,18 @@ int DEFAULT_CC
 config_read_dmx_params(int file, struct config_sesman* cs, struct list* param_n,
                        struct list* param_v);
 
+/**
+ *
+ * @brief Reads sesman [XdmxBackend] configuration section
+ * @param file configuration file descriptor
+ * @param cs pointer to a config_sesman struct
+ * @param param_n parameter name list
+ * @param param_v parameter value list
+ * @return 0 on success, 1 on failure
+ *
+ */
+int DEFAULT_CC
+config_read_dmx_backend_params(int file, struct config_sesman* cs, struct list* param_n,
+                       struct list* param_v);
 #endif
 
