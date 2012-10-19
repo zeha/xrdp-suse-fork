@@ -48,29 +48,59 @@ extern struct config_sesman* g_cfg; /* config.h */
 struct session_chain* g_sessions = NULL;
 int g_session_count = 0;
 
-/* max to 1024 sessions */
-static int unused_displays [1024];
+static int xbeDisplayOffset = 256;
+/* max to 256 sessions */
+static int available_displays [256];
+
+/* return 0 if there isn't a display running, nonzero otherwise */
+static int DEFAULT_CC
+x_server_running(int display)
+{
+  char text[256];
+  int x_running;
+
+  g_sprintf(text, "/tmp/.X11-unix/X%d", display);
+  x_running = g_file_exist(text);
+  if (!x_running)
+  {
+    g_sprintf(text, "/tmp/.X%d-lock", display);
+    x_running = g_file_exist(text);
+  }
+  return x_running;
+}
 
 static void
-set_unused_display (int display, int used)
+init_available_display ()
 {
-  unused_displays [display - 10] = used;
+  int i;
+  for (i = 0; i < g_cfg->sess.max_sessions; i++)
+  {
+    if (!x_server_running (i + 10))
+      available_displays [i] = 1;
+    else
+      available_displays [i] = 0;
+  }
+}
+
+static void
+set_available_display (int display, int available)
+{
+  available_displays [display - 10] = available;
 }
 
 static int
-get_unused_display ()
+get_available_display ()
 {
   int i;
-  if (g_session_count == 0) {
-    for (i = 0; i < g_cfg->sess.max_sessions; i++) {
-      unused_displays [i] = 0;
-    }
-    return 10;
-  } else {
-    for (i = 0; unused_displays [i] != 0; i++) {
-    }
-    return 10 + i;
+  static int initialized = 0;
+  if (!initialized)
+  {
+    init_available_display();
+    initialized = 1;
   }
+  for (i = 0; !available_displays [i]; i++) {
+  }
+  return 10 + i;
 }
 
 /******************************************************************************/
@@ -535,7 +565,7 @@ for user %s denied", username);
     return 0;
   }
 
-  display = get_unused_display ();
+  display = get_available_display ();
   g_sprintf(geometry, "%dx%d", width, height);
   g_sprintf(depth, "%d", bpp);
   g_sprintf(screen, ":%d", display);
@@ -734,7 +764,26 @@ for user %s denied", username);
           if (strstr (g_cfg->dmx_backend, "Xfake")) /* if the backend was Xfake, use the '-screen' param */
           {
             char geometry_depth [32];
+            char xfake_display[32];
+            int  xbe_display;
+
+            xbe_display = display + xbeDisplayOffset;
+            while (xbe_display <= xbeDisplayOffset * 2)
+            {
+              if (!x_server_running (xbe_display))
+                break;
+              xbe_display++;
+            }
+
+            if (xbe_display > xbeDisplayOffset * 2)
+            {
+              log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS, "error - no available display offset");
+              g_exit(1);
+            }
+
+            g_sprintf(xfake_display, ":%d", xbe_display);
             g_sprintf(geometry_depth, "%dx%dx%d", width, height, bpp);
+            list_add_item(xserver_params, (long)g_strdup(xfake_display));
             list_add_item(xserver_params, (long)g_strdup("-screen"));
             list_add_item(xserver_params, (long)g_strdup(geometry_depth));  
           }
@@ -1066,7 +1115,7 @@ for user %s denied", username);
     lock_chain_acquire();
     temp->next=g_sessions;
     g_sessions=temp;
-    set_unused_display (display, 1);
+    set_available_display (display, 0);
     g_session_count++;
     /*THERAD-FIX free the chain*/
     lock_chain_release();
@@ -1170,7 +1219,7 @@ session_kill(int pid)
         prev->next = tmp->next;
       }
       g_free(tmp);
-      set_unused_display (tmp->item->display, 0);
+      set_available_display (tmp->item->display, 1);
       g_session_count--;
       /*THREAD-FIX release chain lock */
       lock_chain_release();
