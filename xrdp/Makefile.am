@@ -1,6 +1,7 @@
 INCLUDES = \
   -I$(top_srcdir)/common \
-  -I$(top_srcdir)/libxrdp
+  -I$(top_srcdir)/libxrdp \
+  $(AVAHI_CFLAGS)
 
 sbin_PROGRAMS = \
   xrdp
@@ -18,11 +19,13 @@ xrdp_SOURCES = \
   xrdp_painter.c \
   xrdp_process.c \
   xrdp_region.c \
-  xrdp_wm.c
+  xrdp_wm.c \
+  xrdp_avahi.c
 
 xrdp_LDADD = \
   $(top_srcdir)/common/libcommon.la \
-  $(top_srcdir)/libxrdp/libxrdp.la
+  $(top_srcdir)/libxrdp/libxrdp.la \
+  $(AVAHI_LIBS)
 
 xrdpsysconfdir=$(sysconfdir)/xrdp
 

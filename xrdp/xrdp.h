@@ -153,6 +153,8 @@ xrdp_listen_create(void);
 void APP_CC
 xrdp_listen_delete(struct xrdp_listen* self);
 int APP_CC
+xrdp_listen_get_port(char* port, int port_bytes);
+int APP_CC
 xrdp_listen_main_loop(struct xrdp_listen* self);
 
 /* xrdp_region.c */
@@ -401,3 +403,9 @@ server_send_to_channel(struct xrdp_mod* mod, int channel_id,
                        char* data, int data_len);
 int DEFAULT_CC
 server_set_login_mode(struct xrdp_mod* mod, int login_mode);
+
+/* xrdp_avahi.c */
+int APP_CC
+xrdp_avahi_init(void);
+void APP_CC
+xrdp_avahi_fini(void);

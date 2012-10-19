@@ -105,7 +105,7 @@ xrdp_process_run(void* in_val)
 }
 
 /*****************************************************************************/
-static int
+int
 xrdp_listen_get_port(char* port, int port_bytes)
 {
   int fd;

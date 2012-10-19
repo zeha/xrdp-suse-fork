@@ -7,6 +7,7 @@ AM_INIT_AUTOMAKE([1.6 foreign])
 AC_PROG_CC
 AC_C_CONST
 AC_PROG_LIBTOOL
+PKG_CHECK_MODULES(AVAHI, avahi-client >= 0.6.4)
 AC_ARG_ENABLE(nopam, AS_HELP_STRING([--enable-nopam],
               [Build no PAM support (default: no)]),
               [nopam=true], [nopam=false])
