@@ -23,7 +23,7 @@ AM_CONDITIONAL(SESMAN_PAMUSERPASS, [test x$pamuserpass = xtrue])
 PKG_CHECK_MODULES(DBUS, dbus-1)
 PKG_CHECK_MODULES(XAU, xau)
 PKG_CHECK_MODULES(XCB, xcb)
-libdir="${libdir}/xrdp/";
+libdir="${libdir}/xrdp";
 AC_DEFINE_UNQUOTED([XRDP_LIB_PATH], ["${libdir}"], [xrdp lib dir])
 if test "x${prefix}" = "xNONE" ; then
 sysconfdir="/etc/";
