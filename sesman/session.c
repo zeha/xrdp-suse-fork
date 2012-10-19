@@ -27,6 +27,7 @@
 
 #include "sesman.h"
 #include "libscp_types.h"
+#include "lang.c"
 
 #include <errno.h>
 #include <stdio.h>
@@ -552,6 +553,7 @@ session_start(int width, int height, int bpp, int layout,
   DBusConnection *connection;
   DBusError error;
   int pipefd[2];
+  const char *layout_name;
 
   /*THREAD-FIX lock to control g_session_count*/
   lock_chain_acquire();
@@ -569,6 +571,12 @@ for user %s denied", username);
   g_sprintf(geometry, "%dx%d", width, height);
   g_sprintf(depth, "%d", bpp);
   g_sprintf(screen, ":%d", display);
+  layout_name = get_keylayout_name(layout);
+
+  if (layout_name == NULL)
+  {
+      layout_name = "us";
+  }
 
   /*THREAD-FIX unlock chain*/
   lock_chain_release();
@@ -727,10 +735,9 @@ for user %s denied", username);
 	  list_add_item(xserver_params, (long)g_strdup("-auth"));
 	  list_add_item(xserver_params, (long)g_strdup(auth_file));
 #endif
+          list_add_item(xserver_params, (long)g_strdup("-rdplayout"));
+          list_add_item(xserver_params, (long)g_strdup(layout_name));
 
-          /* additional parameters from sesman.ini file */
-          //config_read_xserver_params(SESMAN_SESSION_TYPE_XRDP,
-          //                           xserver_params);
 	  list_append_list_strdup(g_cfg->rdp_params, xserver_params, 0);
 
           /* make sure it ends with a zero */

@@ -9,7 +9,8 @@ libcommon_la_SOURCES = \
   os_calls.c \
   ssl_calls.c \
   thread_calls.c \
-  trans.c
+  trans.c \
+  lang.c
 
 libcommon_la_LIBADD = \
   -lcrypto \

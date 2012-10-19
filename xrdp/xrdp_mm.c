@@ -231,7 +231,15 @@ xrdp_mm_send_login(struct xrdp_mm* self)
       if ((g_strcasecmp(value, "libdmx.so") == 0) ||
           (g_strcasecmp(value, "dmx.dll") == 0))
       {
-        self->code = 20;
+        if((libxrdp_get_channel_id (self->wm->session, "rdpx11") < 1))
+        {
+            /* fallback to X11rdp */
+            self->code = 10;
+        }
+        else
+        {
+            self->code = 20;
+        }
       }
       else if ((g_strcasecmp(value, "libxup.so") == 0) ||
           (g_strcasecmp(value, "xup.dll") == 0))
@@ -332,6 +340,11 @@ xrdp_mm_setup_mod1(struct xrdp_mm* self)
     g_snprintf(text, 255, "error finding lib");
     xrdp_wm_log_msg(self->wm, text);
     return 1;
+  }
+  /* if client do not support NOMAD, just use X11rdp. */
+  if ((libxrdp_get_channel_id (self->wm->session, "rdpx11") < 0)
+      && (g_strcasecmp(lib, "libdmx.so") == 0)) {
+      g_strncpy (lib, "libxup.so", sizeof("libxup.so"));
   }
   if (self->mod_handle == 0)
   {
