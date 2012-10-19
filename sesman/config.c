@@ -93,6 +93,7 @@ config_read(struct config_sesman* cfg)
   config_read_vnc_params(fd, cfg, param_n, param_v);
   config_read_rdp_params(fd, cfg, param_n, param_v);
   config_read_dmx_params(fd, cfg, param_n, param_v);
+  config_read_dmx_xkb_params(fd, cfg, param_n, param_v);
   config_read_dmx_backend_params(fd, cfg, param_n, param_v);
 
   /* read logging config */
@@ -488,3 +489,21 @@ config_read_dmx_backend_params(int file, struct config_sesman* cs, struct list* 
 
   return 0;
 }
+
+int DEFAULT_CC
+config_read_dmx_xkb_params(int file, struct config_sesman* cs, struct list* param_n, struct list* param_v)
+{
+  int i;
+  list_clear(param_v);
+  list_clear(param_n);
+  cs->dmx_xkb_params.lang = list_create();
+  cs->dmx_xkb_params.params = list_create();
+  file_read_section(file, SESMAN_CFG_DMX_XKB_PARAMS, param_n, param_v);
+  for (i = 0; i < param_n->count; i++)
+  {
+    list_add_item(cs->dmx_xkb_params.lang, (long)g_strdup((char*)list_get_item(param_n, i)));
+    list_add_item(cs->dmx_xkb_params.params, (long)g_strdup((char*)list_get_item(param_v, i)));
+  }
+  return 0;
+}
+

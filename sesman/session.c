@@ -931,32 +931,96 @@ for user %s denied", username);
 	    list_add_item(setxkbmap_params, (long)g_strdup("setxkbmap"));
 	    switch (layout)
 	    {
+		int i;
 	    case 0x40c: /* france */
 		list_add_item(setxkbmap_params, (long)g_strdup("fr"));
+		for (i = 0; i < g_cfg->dmx_xkb_params.lang->count; i++)
+		{
+		    if (0 == g_strcmp("fr", (char*)list_get_item(g_cfg->dmx_xkb_params.lang, i)))
+		    {
+			list_add_item(setxkbmap_params, (long)g_strdup((char*)list_get_item (g_cfg->dmx_xkb_params.params, i)));
+		    }
+		}
 		break;
 	    case 0x809: /* en-uk or en-gb */
 		list_add_item(setxkbmap_params, (long)g_strdup("gb"));
+		for (i = 0; i < g_cfg->dmx_xkb_params.lang->count; i++)
+		{
+		    if (0 == g_strcmp("gb", (char*)list_get_item(g_cfg->dmx_xkb_params.lang, i)))
+		    {
+			list_add_item(setxkbmap_params, (long)g_strdup((char*)list_get_item (g_cfg->dmx_xkb_params.params, i)));
+		    }
+		}
 		break;
 	    case 0x407: /* german */
 		list_add_item(setxkbmap_params, (long)g_strdup("de"));
+		for (i = 0; i < g_cfg->dmx_xkb_params.lang->count; i++)
+		{
+		    if (0 == g_strcmp("de", (char*)list_get_item(g_cfg->dmx_xkb_params.lang, i)))
+		    {
+			list_add_item(setxkbmap_params, (long)g_strdup((char*)list_get_item (g_cfg->dmx_xkb_params.params, i)));
+		    }
+		}
 		break;
 	    case 0x416: /* Portuguese (Brazil) */
 		list_add_item(setxkbmap_params, (long)g_strdup("pt"));
+		for (i = 0; i < g_cfg->dmx_xkb_params.lang->count; i++)
+		{
+		    if (0 == g_strcmp("pt", (char*)list_get_item(g_cfg->dmx_xkb_params.lang, i)))
+		    {
+			list_add_item(setxkbmap_params, (long)g_strdup((char*)list_get_item (g_cfg->dmx_xkb_params.params, i)));
+		    }
+		}
 		break;
 	    case 0x410: /* italy */
 		list_add_item(setxkbmap_params, (long)g_strdup("it"));
+		for (i = 0; i < g_cfg->dmx_xkb_params.lang->count; i++)
+		{
+		    if (0 == g_strcmp("it", (char*)list_get_item(g_cfg->dmx_xkb_params.lang, i)))
+		    {
+			list_add_item(setxkbmap_params, (long)g_strdup((char*)list_get_item (g_cfg->dmx_xkb_params.params, i)));
+		    }
+		}
 		break;
 	    case 0x41d: /* swedish */
 		list_add_item(setxkbmap_params, (long)g_strdup("se"));
+		for (i = 0; i < g_cfg->dmx_xkb_params.lang->count; i++)
+		{
+		    if (0 == g_strcmp("se", (char*)list_get_item(g_cfg->dmx_xkb_params.lang, i)))
+		    {
+			list_add_item(setxkbmap_params, (long)g_strdup((char*)list_get_item (g_cfg->dmx_xkb_params.params, i)));
+		    }
+		}
 		break;
 	    case 0x405: /* czech */
 		list_add_item(setxkbmap_params, (long)g_strdup("cz"));
+		for (i = 0; i < g_cfg->dmx_xkb_params.lang->count; i++)
+		{
+		    if (0 == g_strcmp("cz", (char*)list_get_item(g_cfg->dmx_xkb_params.lang, i)))
+		    {
+			list_add_item(setxkbmap_params, (long)g_strdup((char*)list_get_item (g_cfg->dmx_xkb_params.params, i)));
+		    }
+		}
 		break;
 	    case 0x419: /* russian */
 		list_add_item(setxkbmap_params, (long)g_strdup("ru"));
+		for (i = 0; i < g_cfg->dmx_xkb_params.lang->count; i++)
+		{
+		    if (0 == g_strcmp("ru", (char*)list_get_item(g_cfg->dmx_xkb_params.lang, i)))
+		    {
+			list_add_item(setxkbmap_params, (long)g_strdup((char*)list_get_item (g_cfg->dmx_xkb_params.params, i)));
+		    }
+		}
 		break;
 	    default: /* default 0x409 us en */
 		list_add_item(setxkbmap_params, (long)g_strdup("us"));
+		for (i = 0; i < g_cfg->dmx_xkb_params.lang->count; i++)
+		{
+		    if (0 == g_strcmp("us", (char*)list_get_item(g_cfg->dmx_xkb_params.lang, i)))
+		    {
+			list_add_item(setxkbmap_params, (long)g_strdup((char*)list_get_item (g_cfg->dmx_xkb_params.params, i)));
+		    }
+		}
 		break;
 	    }
 
@@ -968,6 +1032,18 @@ for user %s denied", username);
 	    /* make sure it ends with a zero */
 	    list_add_item(setxkbmap_params, 0);
 	    pp1 = (char**)setxkbmap_params->items;
+	    
+	    log_message(&(g_cfg->log), LOG_LEVEL_DEBUG,
+			"execve parameter list: %d",
+			(setxkbmap_params)->count);
+
+	    for (i=0; i<(setxkbmap_params->count); i++)
+	    {
+		log_message(&(g_cfg->log), LOG_LEVEL_DEBUG,
+			    "        argv[%d] = %s", i,
+			    (char*)list_get_item(setxkbmap_params, i));
+	    }
+	    
 	    g_execvp("setxkbmap", pp1);
 
 	    /* should not get here */
@@ -979,16 +1055,7 @@ for user %s denied", username);
 	    log_message(&(g_cfg->log), LOG_LEVEL_DEBUG,
 			"errno: %d, description: %s",
 			errno, g_get_strerror());
-	    log_message(&(g_cfg->log), LOG_LEVEL_DEBUG,
-			"execve parameter list: %d",
-			(setxkbmap_params)->count);
 
-	    for (i=0; i<(setxkbmap_params->count); i++)
-	    {
-		log_message(&(g_cfg->log), LOG_LEVEL_DEBUG,
-			    "        argv[%d] = %s", i,
-			    (char*)list_get_item(setxkbmap_params, i));
-	    }
 	    list_delete(setxkbmap_params);
 	    g_exit(1);
 	}
