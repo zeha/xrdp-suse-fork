@@ -217,7 +217,8 @@ set_string(char** in_str, const char* in)
   {
     return 0;
   }
-  g_free(*in_str);
+  if (*in_str)
+    g_free(*in_str);
   *in_str = g_strdup(in);
   return 0;
 }

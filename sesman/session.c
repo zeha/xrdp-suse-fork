@@ -29,12 +29,24 @@
 #include "libscp_types.h"
 
 #include <errno.h>
-//#include <time.h>
+#include <stdio.h>
+#ifndef _WIN32
+#include <string.h>
+#include <unistd.h>
+#include <signal.h>
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <X11/Xauth.h>
+#include <xcb/xcb.h>
+#endif
+#include <dbus/dbus.h>
 
 extern unsigned char g_fixedkey[8];
 extern struct config_sesman* g_cfg; /* config.h */
-struct session_chain* g_sessions;
-int g_session_count;
+struct session_chain* g_sessions = NULL;
+int g_session_count = 0;
 
 /******************************************************************************/
 struct session_item* DEFAULT_CC
@@ -49,14 +61,23 @@ session_get_bydata(char* name, int width, int height, int bpp)
 
   while (tmp != 0)
   {
-    if (g_strncmp(name, tmp->item->name, 255) == 0 &&
-        tmp->item->width == width &&
-        tmp->item->height == height &&
-        tmp->item->bpp == bpp)
+    if (g_strncmp(name, tmp->item->name, 255) == 0)
     {
-      /*THREAD-FIX release chain lock */
-      lock_chain_release();
-      return tmp->item;
+      if (tmp->item->type == SESMAN_SESSION_TYPE_XDMX)
+      {
+	/*THREAD-FIX release chain lock */
+        lock_chain_release();
+        return tmp->item;
+      }
+
+      if (tmp->item->bpp == bpp &&
+	  tmp->item->width == width &&
+	  tmp->item->height == height)
+      {
+        /*THREAD-FIX release chain lock */
+        lock_chain_release();
+        return tmp->item;
+      }
     }
     tmp = tmp->next;
   }
@@ -64,52 +85,6 @@ session_get_bydata(char* name, int width, int height, int bpp)
   /*THREAD-FIX release chain lock */
   lock_chain_release();
   return 0;
-}
-
-/******************************************************************************/
-/**
- *
- * @brief checks if there's a server running on a display
- * @param display the display to check
- * @return 0 if there isn't a display running, nonzero otherwise
- *
- */
-static int DEFAULT_CC
-x_server_running(int display)
-{
-  char text[256];
-  int x_running;
-  int sck;
-
-  g_sprintf(text, "/tmp/.X11-unix/X%d", display);
-  x_running = g_file_exist(text);
-  if (!x_running)
-  {
-    g_sprintf(text, "/tmp/.X%d-lock", display);
-    x_running = g_file_exist(text);
-  }
-  if (!x_running) /* check 59xx */
-  {
-    sck = g_tcp_socket();
-    g_sprintf(text, "59%2.2d", display);
-    x_running = g_tcp_bind(sck, text);
-    g_tcp_close(sck);
-  }
-  if (!x_running) /* check 60xx */
-  {
-    sck = g_tcp_socket();
-    g_sprintf(text, "60%2.2d", display);
-    x_running = g_tcp_bind(sck, text);
-    g_tcp_close(sck);
-  }
-  if (!x_running) /* check 62xx */
-  {
-    sck = g_tcp_socket();
-    g_sprintf(text, "62%2.2d", display);
-    x_running = g_tcp_bind(sck, text);
-    g_tcp_close(sck);
-  }
-  return x_running;
 }
 
 /******************************************************************************/
@@ -171,12 +146,340 @@ session_start_sessvc(int xpid, int wmpid, long data)
 }
 
 /******************************************************************************/
+static dbus_bool_t
+add_param_basic (DBusMessageIter *iter_array,
+                 const char      *name,
+                 int              type,
+                 const void      *value)
+{
+    DBusMessageIter iter_struct;
+    DBusMessageIter iter_variant;
+    const char     *container_type;
+
+    switch (type) {
+    case DBUS_TYPE_STRING:
+	container_type = DBUS_TYPE_STRING_AS_STRING;
+	break;
+    case DBUS_TYPE_BOOLEAN:
+	container_type = DBUS_TYPE_BOOLEAN_AS_STRING;
+	break;
+    case DBUS_TYPE_INT32:
+	container_type = DBUS_TYPE_INT32_AS_STRING;
+	break;
+    default:
+	goto oom;
+	break;
+    }
+
+    if (! dbus_message_iter_open_container (iter_array,
+					    DBUS_TYPE_STRUCT,
+					    NULL,
+					    &iter_struct)) {
+	goto oom;
+    }
+
+    if (! dbus_message_iter_append_basic (&iter_struct,
+					  DBUS_TYPE_STRING,
+					  &name)) {
+	goto oom;
+    }
+
+    if (! dbus_message_iter_open_container (&iter_struct,
+					    DBUS_TYPE_VARIANT,
+					    container_type,
+					    &iter_variant)) {
+	goto oom;
+    }
+
+    if (! dbus_message_iter_append_basic (&iter_variant,
+					  type,
+					  value)) {
+	goto oom;
+    }
+
+    if (! dbus_message_iter_close_container (&iter_struct,
+					     &iter_variant)) {
+	goto oom;
+    }
+
+    if (! dbus_message_iter_close_container (iter_array,
+					     &iter_struct)) {
+	goto oom;
+    }
+
+    return TRUE;
+oom:
+    return FALSE;
+}
+
+static char *
+session_ck_open_session (DBusConnection *connection,
+			 const char     *username,
+			 int            display)
+{
+    DBusError       error;
+    DBusMessage     *message;
+    DBusMessage     *reply;
+    DBusMessageIter iter;
+    DBusMessageIter iter_array;
+    dbus_bool_t     res;
+    char            *ret;
+    char            *cookie;
+    dbus_bool_t     is_local = FALSE;
+    dbus_bool_t     active = TRUE;
+    int             uid;
+    char            display_str[256];
+    const char      *x11_display = display_str;
+    const char      *session_type = "rdp";
+
+    reply = NULL;
+    message = NULL;
+    ret = NULL;
+
+    g_sprintf(display_str, ":%d", display);
+
+    if (g_getuser_info(username, 0, &uid, 0, 0, 0))
+	goto out;
+
+    message =
+	dbus_message_new_method_call ("org.freedesktop.ConsoleKit",
+				      "/org/freedesktop/ConsoleKit/Manager",
+				      "org.freedesktop.ConsoleKit.Manager",
+				      "OpenSessionWithParameters");
+    if (message == NULL) {
+	goto out;
+    }
+
+    dbus_message_iter_init_append (message, &iter);
+    if (! dbus_message_iter_open_container (&iter,
+					    DBUS_TYPE_ARRAY,
+					    "(sv)",
+					    &iter_array)) {
+	goto out;
+    }
+
+    if (!add_param_basic (&iter_array,
+			  "unix-user",
+			  DBUS_TYPE_INT32,
+			  &uid) ||
+	!add_param_basic (&iter_array,
+			  "x11-display",
+			  DBUS_TYPE_STRING,
+			  &x11_display) ||
+	!add_param_basic (&iter_array,
+			  "is-local",
+			  DBUS_TYPE_BOOLEAN,
+			  &is_local) ||
+	!add_param_basic (&iter_array,
+			  "active",
+			  DBUS_TYPE_BOOLEAN,
+			  &active) ||
+	!add_param_basic (&iter_array,
+			  "session-type",
+			  DBUS_TYPE_STRING,
+			  &session_type)) {
+	log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS,
+		    "Error adding ck session parameter");
+	goto out;
+    }
+
+    if (! dbus_message_iter_close_container (&iter, &iter_array)) {
+	goto out;
+    }
+
+    dbus_error_init (&error);
+    reply = dbus_connection_send_with_reply_and_block (connection,
+						       message,
+						       -1,
+						       &error);
+    if (reply == NULL) {
+	if (dbus_error_is_set (&error)) {
+	    log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS,
+			"Unable to open session: %s",
+			error.message);
+	    dbus_error_free (&error);
+	    goto out;
+	}
+    }
+
+    dbus_error_init (&error);
+    if (! dbus_message_get_args (reply,
+				 &error,
+				 DBUS_TYPE_STRING, &cookie,
+				 DBUS_TYPE_INVALID)) {
+	if (dbus_error_is_set (&error)) {
+	    log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS,
+			"Unable to open session: %s",
+			error.message);
+	    dbus_error_free (&error);
+	    goto out;
+	}
+    }
+
+    ret = g_strdup (cookie);
+
+out:
+    if (reply != NULL) {
+	dbus_message_unref (reply);
+    }
+
+    if (message != NULL) {
+	dbus_message_unref (message);
+    }
+
+    return ret;
+}
+
+static void
+session_ck_close_session (DBusConnection *connection,
+			  char           *cookie)
+{
+    DBusError   error;
+    DBusMessage *message;
+    DBusMessage *reply;
+
+    reply = NULL;
+    message = NULL;
+
+    if (cookie == NULL) {
+	goto out;
+    }
+
+    message =
+	dbus_message_new_method_call ("org.freedesktop.ConsoleKit",
+				      "/org/freedesktop/ConsoleKit/Manager",
+				      "org.freedesktop.ConsoleKit.Manager",
+				      "CloseSession");
+    if (message == NULL) {
+	goto out;
+    }
+
+    if (! dbus_message_append_args (message,
+				    DBUS_TYPE_STRING, &cookie,
+				    DBUS_TYPE_INVALID)) {
+	goto out;
+    }
+
+    dbus_error_init (&error);
+    reply = dbus_connection_send_with_reply_and_block (connection,
+						       message,
+						       -1,
+						       &error);
+    if (reply == NULL) {
+	if (dbus_error_is_set (&error)) {
+	    g_printf("\n[sessvc] Unable to close session: %s",
+		     error.message);
+	    dbus_error_free (&error);
+	    goto out;
+	}
+    }
+
+out:
+    if (reply != NULL) {
+	dbus_message_unref (reply);
+    }
+
+    if (message != NULL) {
+	dbus_message_unref (message);
+    }
+}
+
+/******************************************************************************/
+#ifndef _WIN32
+static int     received_usr1;
+static jmp_buf jumpbuf;
+
+static void
+sig_usr1_waiting (int sig)
+{
+    signal (sig, sig_usr1_waiting);
+    received_usr1++;
+}
+
+static void
+sig_usr1_jump (int sig)
+{
+    sigset_t set;
+
+    signal (sig, sig_usr1_waiting);
+
+    sigemptyset (&set);
+    sigaddset (&set, SIGUSR1);
+    sigprocmask (SIG_UNBLOCK, &set, NULL);
+
+    longjmp (jumpbuf, 1);
+}
+
+#define AUTH_DATA_LEN 16 /* bytes of authorization data */
+
+static int
+session_setup_auth (char* display,
+		    char* auth_data,
+		    int   auth_fd)
+{
+    Xauth   auth;
+    int	    random_fd, i;
+    ssize_t bytes, size;
+    char    auth_host[256];
+    FILE    *file;
+
+    auth.family = FamilyLocal;
+
+    gethostname (auth_host, sizeof (auth_host));
+
+    auth.address	= auth_host;
+    auth.address_length = strlen (auth_host);
+
+    auth.number        = display;
+    auth.number_length = strlen (auth.number);
+
+    auth.name	     = "MIT-MAGIC-COOKIE-1";
+    auth.name_length = strlen (auth.name);
+
+    random_fd = open ("/dev/urandom", O_RDONLY);
+    if (random_fd == -1)
+	return 1;
+
+    bytes = 0;
+    do {
+	size = read (random_fd, auth_data + bytes, AUTH_DATA_LEN - bytes);
+	if (size <= 0)
+	    break;
+
+	bytes += size;
+    } while (bytes != AUTH_DATA_LEN);
+
+    close (random_fd);
+
+    if (bytes != AUTH_DATA_LEN)
+	return 1;
+
+    auth.data	     = auth_data;
+    auth.data_length = AUTH_DATA_LEN;
+
+    file = fdopen (auth_fd, "w");
+    if (!file)
+    {
+	close (auth_fd);
+	return 1;
+    }
+
+    XauWriteAuth (file, &auth);
+    fclose (file);
+
+    return 0;
+}
+#endif
+
+/******************************************************************************/
 int DEFAULT_CC
-session_start(int width, int height, int bpp, char* username, char* password,
-              long data, unsigned char type)
+session_start(int width, int height, int bpp, int layout,
+	      char* username, char* password,
+              char* wm, long data, unsigned char type)
 {
   int display;
   int pid;
+  int xkbpid;
   int wmpid;
   int xpid;
   int i;
@@ -190,6 +493,10 @@ session_start(int width, int height, int bpp, char* username, char* password,
   struct list* xserver_params=0;
   time_t ltime;
   struct tm stime;
+  char *ck_cookie;
+  DBusConnection *connection;
+  DBusError error;
+  int pipefd[2];
 
   /*THREAD-FIX lock to control g_session_count*/
   lock_chain_acquire();
@@ -202,6 +509,8 @@ session_start(int width, int height, int bpp, char* username, char* password,
 for user %s denied", username);
     return 0;
   }
+
+  display = 10 + g_session_count;
 
   /*THREAD-FIX unlock chain*/
   lock_chain_release();
@@ -222,133 +531,135 @@ for user %s denied", username);
     return 0;
   }
 
-  display = 10;
+  dbus_error_init (&error);
+  connection = dbus_bus_get(DBUS_BUS_SYSTEM, &error);
+  if (connection == NULL) {
+      if (dbus_error_is_set (&error)) {
+	  log_message(&(g_cfg->log), LOG_LEVEL_INFO, "dbus_bus_get: %s",
+		      error.message);
+	  dbus_error_free (&error);
+      }
+      g_free(temp->item);
+      g_free(temp);
+      return 0;
+  }
 
-  /*while (x_server_running(display) && display < 50)*/
-  /* we search for a free display up to max_sessions */
-  /* we should need no more displays than this       */
+  dbus_connection_set_exit_on_disconnect (connection, FALSE);
+
+#ifndef _WIN32
+  if (pipe(pipefd) == -1)
+  {
+      log_message(&(g_cfg->log), LOG_LEVEL_INFO, "pipe failed");
+      g_free(temp->item);
+      g_free(temp);
+      return 0;
+  }
+#endif
 
   /* block all the threads running to enable forking */
   scp_lock_fork_request();
-  while (x_server_running(display))
-  {
-    display++;
-    if (((display - 10) > g_cfg->sess.max_sessions) || (display >= 50))
-    {
-      return 0;
-    }
-  }
-  wmpid = 0;
+
+  ck_cookie = session_ck_open_session (connection, username, display);
+
   pid = g_fork();
   if (pid == -1)
   {
   }
   else if (pid == 0) /* child sesman */
   {
+
+#ifndef _WIN32
+    char       auth_file[256];
+    const char *auth_templ = "/tmp/.xrdp-auth-XXXXXX";
+    char       auth_data[AUTH_DATA_LEN];
+    int        auth_fd;
+    int        mask;
+
+    close(pipefd[0]);
+#endif
+
     g_unset_signals();
     auth_start_session(data, display);
+
+#ifndef _WIN32
+    strcpy (auth_file, auth_templ);
+    mask = umask (0077);
+    auth_fd = mkstemp (auth_file);
+    umask (mask);
+
+    if (auth_fd == -1)
+    {
+      log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS,
+		  "error - generating unique authorization file");
+      g_exit(1);
+    }
+
+    if (session_setup_auth (screen + 1, auth_data, auth_fd))
+    {
+      g_exit(1);
+    }
+#endif
+    
+    if (env_set_user(username, passwd_file, display, auth_file) != 0)
+    {
+      log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS, "error - set user failed");
+      g_exit(1);
+    }
+
+    env_check_password_file(passwd_file, password);
     g_sprintf(geometry, "%dx%d", width, height);
     g_sprintf(depth, "%d", bpp);
     g_sprintf(screen, ":%d", display);
-    wmpid = g_fork();
-    if (wmpid == -1)
+
+#ifndef _WIN32
+    g_signal (SIGUSR1, sig_usr1_waiting);
+#endif
+
+    xpid = g_fork();
+    if (xpid == -1)
     {
     }
-    else if (wmpid == 0) /* child (child sesman) xserver */
+    else if (xpid == 0) /* child (child sesman) xserver */
     {
-      /* give X a bit to start */
-      g_sleep(1000);
-      env_set_user(username, 0, display);
-      if (x_server_running(display))
+
+#ifndef _WIN32
+      close(pipefd[1]);
+      g_signal (SIGUSR1, SIG_IGN);
+#endif
+
+      if (type == SESMAN_SESSION_TYPE_XVNC)
       {
-        auth_set_env(data);
-        /* try to execute user window manager if enabled */
-        if (g_cfg->enable_user_wm)
-        {
-          g_sprintf(text,"%s/%s", g_getenv("HOME"), g_cfg->user_wm);
-          if (g_file_exist(text))
-          {
-            g_execlp3(text, g_cfg->user_wm, 0);
-            log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS,"error starting user wm for user %s - pid %d",
-                        username, g_getpid());
-            /* logging parameters */
-            /* no problem calling strerror for thread safety: other threads are blocked */
-            log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "errno: %d, description: %s", errno,
-                        g_get_strerror());
-            log_message(&(g_cfg->log), LOG_LEVEL_DEBUG,"execlp3 parameter list:");
-            log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "        argv[0] = %s", text);
-            log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "        argv[1] = %s", g_cfg->user_wm);
-          }
-        }
-        /* if we're here something happened to g_execlp3
-           so we try running the default window manager */
-        g_sprintf(text, "%s/%s", XRDP_CFG_PATH, g_cfg->default_wm);
-        g_execlp3(text, g_cfg->default_wm, 0);
+        xserver_params = list_create();
+	xserver_params->auto_free = 1;
+	/* these are the must have parameters */
+	list_add_item(xserver_params, (long)g_strdup("Xvnc"));
+	list_add_item(xserver_params, (long)g_strdup(screen));
+	list_add_item(xserver_params, (long)g_strdup("-geometry"));
+	list_add_item(xserver_params, (long)g_strdup(geometry));
+	list_add_item(xserver_params, (long)g_strdup("-depth"));
+	list_add_item(xserver_params, (long)g_strdup(depth));
+	list_add_item(xserver_params, (long)g_strdup("-rfbauth"));
+	list_add_item(xserver_params, (long)g_strdup(passwd_file));
 
-        log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS,"error starting default wm for user %s - pid %d",
-                    username, g_getpid());
-        /* logging parameters */
-        /* no problem calling strerror for thread safety: other threads are blocked */
-        log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "errno: %d, description: %s", errno,
-                    g_get_strerror());
-        log_message(&(g_cfg->log), LOG_LEVEL_DEBUG,"execlp3 parameter list:");
-        log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "        argv[0] = %s", text);
-        log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "        argv[1] = %s", g_cfg->default_wm);
+#ifndef _WIN32
+	list_add_item(xserver_params, (long)g_strdup("-auth"));
+	list_add_item(xserver_params, (long)g_strdup(auth_file));
+#endif
 
-        /* still a problem starting window manager just start xterm */
-        g_execlp3("xterm", "xterm", 0);
 
-        /* should not get here */
-        log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS,"error starting xterm for user %s - pid %d",
-                    username, g_getpid());
-        /* logging parameters */
-        /* no problem calling strerror for thread safety: other threads are blocked */
-        log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "errno: %d, description: %s", errno, g_get_strerror());
+	/* additional parameters from sesman.ini file */
+	//config_read_xserver_params(SESMAN_SESSION_TYPE_XVNC,
+	//                           xserver_params);
+	list_append_list_strdup(g_cfg->vnc_params, xserver_params, 0);
+
+	/* make sure it ends with a zero */
+	list_add_item(xserver_params, 0);
+	pp1 = (char**)xserver_params->items;
+	g_execvp("Xvnc", pp1);
       }
-      else
+      else if (type == SESMAN_SESSION_TYPE_XRDP)
       {
-        log_message(&(g_cfg->log), LOG_LEVEL_ERROR, "another Xserver is already active on display %d", display);
-      }
-      log_message(&(g_cfg->log), LOG_LEVEL_DEBUG,"aborting connection...");
-      g_exit(0);
-    }
-    else /* parent (child sesman) */
-    {
-      xpid = g_fork();
-      if (xpid == -1)
-      {
-      }
-      else if (xpid == 0) /* child */
-      {
-        env_set_user(username, passwd_file, display);
-        env_check_password_file(passwd_file, password);
-        if (type == SESMAN_SESSION_TYPE_XVNC)
-        {
-          xserver_params = list_create();
-          xserver_params->auto_free = 1;
-          /* these are the must have parameters */
-          list_add_item(xserver_params, (long)g_strdup("Xvnc"));
-          list_add_item(xserver_params, (long)g_strdup(screen));
-          list_add_item(xserver_params, (long)g_strdup("-geometry"));
-          list_add_item(xserver_params, (long)g_strdup(geometry));
-          list_add_item(xserver_params, (long)g_strdup("-depth"));
-          list_add_item(xserver_params, (long)g_strdup(depth));
-          list_add_item(xserver_params, (long)g_strdup("-rfbauth"));
-          list_add_item(xserver_params, (long)g_strdup(passwd_file));
-
-          /* additional parameters from sesman.ini file */
-          //config_read_xserver_params(SESMAN_SESSION_TYPE_XVNC,
-          //                           xserver_params);
-          list_append_list_strdup(g_cfg->vnc_params, xserver_params, 0);
-
-          /* make sure it ends with a zero */
-          list_add_item(xserver_params, 0);
-          pp1 = (char**)xserver_params->items;
-          g_execvp("Xvnc", pp1);
-        }
-        else if (type == SESMAN_SESSION_TYPE_XRDP)
-        {
-          xserver_params = list_create();
+	  xserver_params = list_create();
           xserver_params->auto_free = 1;
           /* these are the must have parameters */
           list_add_item(xserver_params, (long)g_strdup("X11rdp"));
@@ -358,6 +669,11 @@ for user %s denied", username);
           list_add_item(xserver_params, (long)g_strdup("-depth"));
           list_add_item(xserver_params, (long)g_strdup(depth));
 
+#ifndef _WIN32
+	  list_add_item(xserver_params, (long)g_strdup("-auth"));
+	  list_add_item(xserver_params, (long)g_strdup(auth_file));
+#endif
+
           /* additional parameters from sesman.ini file */
           //config_read_xserver_params(SESMAN_SESSION_TYPE_XRDP,
           //                           xserver_params);
@@ -366,42 +682,322 @@ for user %s denied", username);
           /* make sure it ends with a zero */
           list_add_item(xserver_params, 0);
           pp1 = (char**)xserver_params->items;
-          g_execvp("X11rdp", pp1);
-        }
-        else
-        {
-          log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS, "bad session type - user %s - pid %d",
-                      username, g_getpid());
-          g_exit(1);
-        }
-
-        /* should not get here */
-        log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS, "error starting X server - user %s - pid %d",
-                    username, g_getpid());
-
-        /* logging parameters */
-        /* no problem calling strerror for thread safety: other threads are blocked */
-        log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "errno: %d, description: %s", errno, g_get_strerror());
-        log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "execve parameter list: %d", (xserver_params)->count);
-
-        for (i=0; i<(xserver_params->count); i++)
-        {
-          log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "        argv[%d] = %s", i, (char*)list_get_item(xserver_params, i));
-        }
-        list_delete(xserver_params);
-        g_exit(1);
+	  g_execvp("X11rdp", pp1);
       }
-      else /* parent (child sesman)*/
+      else if (type == SESMAN_SESSION_TYPE_XDMX)
       {
-        /* new style waiting for clients */
-        session_start_sessvc(xpid, wmpid, data);
+	  xserver_params = list_create();
+          xserver_params->auto_free = 1;
+          /* these are the must have parameters */
+          list_add_item(xserver_params, (long)g_strdup("Xdmx"));
+          list_add_item(xserver_params, (long)g_strdup(screen));
+
+#ifndef _WIN32
+	  list_add_item(xserver_params, (long)g_strdup("-auth"));
+	  list_add_item(xserver_params, (long)g_strdup(auth_file));
+#endif
+
+          /* additional parameters from sesman.ini file */
+          list_append_list_strdup(g_cfg->dmx_params, xserver_params, 0);
+
+	  /* make sure it ends with a zero */
+	  list_add_item(xserver_params, 0);
+          pp1 = (char**)xserver_params->items;
+          g_execvp("Xdmx", pp1);
+      }
+      else
+      {
+	log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS, "bad session type - user %s - pid %d",
+		    username, g_getpid());
+	g_exit(1);
+      }
+
+      /* should not get here */
+      log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS, "error starting X server - user %s - pid %d",
+		  username, g_getpid());
+
+      /* logging parameters */
+      /* no problem calling strerror for thread safety: other threads are blocked */
+      log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "errno: %d, description: %s", errno, g_get_strerror());
+      log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "execve parameter list: %d", (xserver_params)->count);
+
+      for (i=0; i<(xserver_params->count); i++)
+      {
+	log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "        argv[%d] = %s", i, (char*)list_get_item(xserver_params, i));
+      }
+      list_delete(xserver_params);
+      g_exit(1);
+    }
+    else /* parent (child sesman) */
+    {
+
+#ifdef _WIN32
+      g_sleep (5000);
+#else
+      xcb_connection_t *c;
+
+      received_usr1 = 0;
+
+      for (;;)
+      {
+	g_signal (SIGUSR1, sig_usr1_waiting);
+	if (setjmp (jumpbuf))
+	  break;
+
+	g_signal (SIGUSR1, sig_usr1_jump);
+	if (received_usr1)
+	  break;
+
+	if (g_waitpid (xpid) != -1)
+	{
+	  log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS,
+		      "error X server died - user %s - pid %d",
+		      username, xpid);
+	  g_exit(1);
+	}
+      }
+
+      c = xcb_connect (screen, NULL);
+      if (!c || xcb_connection_has_error (c))
+      {
+          log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS,
+                      "error X server connection failed - user %s - pid %d",
+                      username, xpid);
+          g_exit(1);
+      }
+#endif
+
+      log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS,
+		  "X server running - user %s - pid %d",
+		  username, xpid);
+
+      g_unset_signals();
+
+      wmpid = g_fork();
+      if (wmpid == -1)
+      {
+      }
+      else if (wmpid == 0) /* child */
+      {
+
+#ifndef _WIN32
+	close(pipefd[1]);
+#endif
+
+	if (ck_cookie)
+	  g_setenv("XDG_SESSION_COOKIE", ck_cookie, 1);
+
+	auth_set_env(data);
+
+	/* for XDMX sessions, we adjust screen size using xrandr once
+	   the X server is up */
+	if (type == SESMAN_SESSION_TYPE_XDMX)
+	{
+	    if (g_fork() == 0)
+	    {
+		struct list* xrandr_params=0;
+
+		xrandr_params = list_create();
+		xrandr_params->auto_free = 1;
+		list_add_item(xrandr_params, (long)g_strdup("xrandr"));
+		list_add_item(xrandr_params, (long)g_strdup("--fb"));
+		list_add_item(xrandr_params, (long)g_strdup(geometry));
+
+		/* make sure it ends with a zero */
+		list_add_item(xrandr_params, 0);
+		pp1 = (char**)xrandr_params->items;
+		g_execvp("xrandr", pp1);
+
+		/* should not get here */
+		log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS,
+			    "error running xrandr - user %s",
+			    username);
+
+		/* logging parameters */
+		log_message(&(g_cfg->log), LOG_LEVEL_DEBUG,
+			    "errno: %d, description: %s",
+			    errno, g_get_strerror());
+		log_message(&(g_cfg->log), LOG_LEVEL_DEBUG,
+			    "execve parameter list: %d",
+			    (xrandr_params)->count);
+
+		for (i=0; i<(xrandr_params->count); i++)
+		{
+		    log_message(&(g_cfg->log), LOG_LEVEL_DEBUG,
+				"        argv[%d] = %s", i,
+				(char*)list_get_item(xrandr_params, i));
+		}
+		list_delete(xrandr_params);
+		g_exit(1);
+	    }
+	}
+
+	/* set XKB map */
+        xkbpid = g_fork();
+	if (xkbpid == 0)
+	{
+	    struct list* setxkbmap_params=0;
+
+	    setxkbmap_params = list_create();
+	    setxkbmap_params->auto_free = 1;
+	    list_add_item(setxkbmap_params, (long)g_strdup("setxkbmap"));
+	    switch (layout)
+	    {
+	    case 0x40c: /* france */
+		list_add_item(setxkbmap_params, (long)g_strdup("fr"));
+		break;
+	    case 0x809: /* en-uk or en-gb */
+		list_add_item(setxkbmap_params, (long)g_strdup("gb"));
+		break;
+	    case 0x407: /* german */
+		list_add_item(setxkbmap_params, (long)g_strdup("de"));
+		break;
+	    case 0x416: /* Portuguese (Brazil) */
+		list_add_item(setxkbmap_params, (long)g_strdup("pt"));
+		break;
+	    case 0x410: /* italy */
+		list_add_item(setxkbmap_params, (long)g_strdup("it"));
+		break;
+	    case 0x41d: /* swedish */
+		list_add_item(setxkbmap_params, (long)g_strdup("se"));
+		break;
+	    case 0x405: /* czech */
+		list_add_item(setxkbmap_params, (long)g_strdup("cz"));
+		break;
+	    case 0x419: /* russian */
+		list_add_item(setxkbmap_params, (long)g_strdup("ru"));
+		break;
+	    default: /* default 0x409 us en */
+		list_add_item(setxkbmap_params, (long)g_strdup("us"));
+		break;
+	    }
+
+            log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS,
+                        "using keyboard layout: 0x%x (%s)",
+                        layout,
+                        list_get_item(setxkbmap_params, 1));
+
+	    /* make sure it ends with a zero */
+	    list_add_item(setxkbmap_params, 0);
+	    pp1 = (char**)setxkbmap_params->items;
+	    g_execvp("setxkbmap", pp1);
+
+	    /* should not get here */
+	    log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS,
+			"error running setxkbmap - user %s",
+			username);
+
+	    /* logging parameters */
+	    log_message(&(g_cfg->log), LOG_LEVEL_DEBUG,
+			"errno: %d, description: %s",
+			errno, g_get_strerror());
+	    log_message(&(g_cfg->log), LOG_LEVEL_DEBUG,
+			"execve parameter list: %d",
+			(setxkbmap_params)->count);
+
+	    for (i=0; i<(setxkbmap_params->count); i++)
+	    {
+		log_message(&(g_cfg->log), LOG_LEVEL_DEBUG,
+			    "        argv[%d] = %s", i,
+			    (char*)list_get_item(setxkbmap_params, i));
+	    }
+	    list_delete(setxkbmap_params);
+	    g_exit(1);
+	}
+
+        g_waitpid(xkbpid);
+
+	/* try to execute session window manager */
+	if (*wm != '\0')
+	  g_execlp3("/etc/X11/xdm/Xsession", "Xsession", wm);
+
+          /* try to execute user window manager if enabled */
+	if (g_cfg->enable_user_wm)
+	{
+          g_sprintf(text,"%s/%s", g_getenv("HOME"), g_cfg->user_wm);
+	  if (g_file_exist(text))
+	  {
+            g_execlp3(text, g_cfg->user_wm, 0);
+	    log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS,"error starting user wm for user %s - pid %d",
+			username, g_getpid());
+	    /* logging parameters */
+	    /* no problem calling strerror for thread safety: other threads are blocked */
+	    log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "errno: %d, description: %s", errno,
+			g_get_strerror());
+	    log_message(&(g_cfg->log), LOG_LEVEL_DEBUG,"execlp3 parameter list:");
+	    log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "        argv[0] = %s", text);
+	    log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "        argv[1] = %s", g_cfg->user_wm);
+	  }
+	}
+        /* if we're here something happened to g_execlp3
+	   so we try running the default window manager */
+	g_sprintf(text, "%s/%s", XRDP_CFG_PATH, g_cfg->default_wm);
+	g_execlp3(text, g_cfg->default_wm, 0);
+
+	log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS,"error starting default wm for user %s - pid %d",
+                    username, g_getpid());
+	/* logging parameters */
+	/* no problem calling strerror for thread safety: other threads are blocked */
+	log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "errno: %d, description: %s", errno,
+		    g_get_strerror());
+	log_message(&(g_cfg->log), LOG_LEVEL_DEBUG,"execlp3 parameter list:");
+	log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "        argv[0] = %s", text);
+	log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "        argv[1] = %s", g_cfg->default_wm);
+
+	/* still a problem starting window manager just start xterm */
+	g_execlp3("xterm", "xterm", 0);
+
+	/* should not get here */
+	log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS,"error starting xterm for user %s - pid %d",
+		    username, g_getpid());
+	/* logging parameters */
+	/* no problem calling strerror for thread safety: other threads are blocked */
+	log_message(&(g_cfg->log), LOG_LEVEL_DEBUG, "errno: %d, description: %s", errno, g_get_strerror());
+      }
+      else /* parent (child sesman) */
+      {
+
+#ifndef _WIN32
+	char status = 1;
+
+	write(pipefd[1], &status, 1);
+	close(pipefd[1]);
+
+        fcntl (xcb_get_file_descriptor (c), F_SETFD, 0);
+#endif
+	/* new style waiting for clients */
+	session_start_sessvc(xpid, wmpid, data);
       }
     }
   }
   else /* parent sesman process */
   {
+    char status = 0;
+    int  len;
+
     /* let the other threads go on */
     scp_lock_fork_release();
+
+#ifdef _WIN32
+    /* wait for X server to start */
+    g_sleep (5000);
+    status = 1;
+#else
+    close(pipefd[1]);
+
+    do {
+	len = read(pipefd[0], &status, 1);
+    } while (len == -1);
+
+    close(pipefd[0]);
+#endif
+
+    if (status == 0)
+    {
+	g_free(temp->item);
+	g_free(temp);
+	return 0;
+    }
 
     temp->item->pid = pid;
     temp->item->display = display;
@@ -409,6 +1005,7 @@ for user %s denied", username);
     temp->item->height = height;
     temp->item->bpp = bpp;
     temp->item->data = data;
+    temp->item->ck_cookie = ck_cookie;
     g_strncpy(temp->item->name, username, 255);
 
     ltime = g_time1();
@@ -431,8 +1028,6 @@ for user %s denied", username);
     g_session_count++;
     /*THERAD-FIX free the chain*/
     lock_chain_release();
-
-    g_sleep(5000);
   }
   return display;
 }
@@ -472,6 +1067,7 @@ struct session_chain
   struct session_chain* next;
   struct session_item* item;
 };
+
 */
 
 /******************************************************************************/
@@ -513,6 +1109,12 @@ session_kill(int pid)
       /* deleting the session */
       log_message(&(g_cfg->log), LOG_LEVEL_INFO, "session %d - user %s - terminated",
                   tmp->item->pid, tmp->item->name);
+      if (tmp->item->ck_cookie)
+      {
+	  session_ck_close_session (dbus_bus_get(DBUS_BUS_SYSTEM, 0),
+				    tmp->item->ck_cookie);
+	g_free(tmp->item->ck_cookie);
+      }
       g_free(tmp->item);
       if (prev == 0)
       {

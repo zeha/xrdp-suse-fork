@@ -44,11 +44,13 @@ main(int argc, char** argv)
   int width;
   int height;
   int bpp;
+  int keylayout;
   int display;
   struct stream* in_s;
   struct stream* out_s;
   char* username;
   char* password;
+  char* exec;
   long data;
 
   if (0 != config_read(&g_cfg))
@@ -60,17 +62,19 @@ main(int argc, char** argv)
   g_pid = g_getpid();
   if (argc == 1)
   {
-    g_printf("xrdp session starter v0.1\n");
+    g_printf("xrdp session starter v0.2\n");
     g_printf("\nusage:\n");
-    g_printf("sesrun <server> <username> <password> <width> <height> <bpp>\n");
+    g_printf("sesrun <server> <username> <password> <exec> <width> <height> <bpp> <keylayout>\n");
   }
-  else if (argc == 7)
+  else if (argc == 9)
   {
     username = argv[2];
     password = argv[3];
-    width = g_atoi(argv[4]);
-    height = g_atoi(argv[5]);
-    bpp = g_atoi(argv[6]);
+    exec = argv[4];
+    width = g_atoi(argv[5]);
+    height = g_atoi(argv[6]);
+    bpp = g_atoi(argv[7]);
+    keylayout = g_atoi(argv[8]);
     make_stream(in_s);
     init_stream(in_s, 8192);
     make_stream(out_s);
@@ -79,16 +83,20 @@ main(int argc, char** argv)
     if (g_tcp_connect(sck, argv[1], "3350") == 0)
     {
       s_push_layer(out_s, channel_hdr, 8);
-      out_uint16_be(out_s, 0); /* code */
+      out_uint16_be(out_s, 20); /* code */
       i = g_strlen(username);
       out_uint16_be(out_s, i);
       out_uint8a(out_s, username, i);
       i = g_strlen(password);
       out_uint16_be(out_s, i);
       out_uint8a(out_s, password, i);
+      i = g_strlen(exec);
+      out_uint16_be(out_s, i);
+      out_uint8a(out_s, exec, i);
       out_uint16_be(out_s, width);
       out_uint16_be(out_s, height);
       out_uint16_be(out_s, bpp);
+      out_uint16_be(out_s, keylayout);
       s_mark_end(out_s);
       s_pop_layer(out_s, channel_hdr);
       out_uint32_be(out_s, 0); /* version */

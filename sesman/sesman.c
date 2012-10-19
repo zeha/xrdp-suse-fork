@@ -273,13 +273,6 @@ main(int argc, char** argv)
   /* start program main loop */
   log_message(&(g_cfg->log), LOG_LEVEL_ALWAYS, "starting sesman with pid %d", g_pid);
 
-  /* make sure the /tmp/.X11-unix directory exist */
-  if (!g_directory_exist("/tmp/.X11-unix"))
-  {
-    g_create_dir("/tmp/.X11-unix");
-    g_chmod_hex("/tmp/.X11-unix", 0x1777);
-  }
-
   sesman_main_loop();
 
   if (!daemon)

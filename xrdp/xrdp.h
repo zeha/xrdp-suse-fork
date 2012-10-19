@@ -92,6 +92,10 @@ xrdp_wm_load_static_colors(struct xrdp_wm* self);
 int APP_CC
 xrdp_wm_load_static_pointers(struct xrdp_wm* self);
 int APP_CC
+xrdp_wm_load_sections(struct xrdp_wm* self,
+		      struct list* string_list,
+		      struct list* data_list);
+int APP_CC
 xrdp_wm_init(struct xrdp_wm* self);
 int APP_CC
 xrdp_wm_send_bitmap(struct xrdp_wm* self, struct xrdp_bitmap* bitmap,
@@ -395,3 +399,5 @@ server_get_channel_id(struct xrdp_mod* mod, char* name);
 int DEFAULT_CC
 server_send_to_channel(struct xrdp_mod* mod, int channel_id,
                        char* data, int data_len);
+int DEFAULT_CC
+server_set_login_mode(struct xrdp_mod* mod, int login_mode);

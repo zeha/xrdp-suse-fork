@@ -10,6 +10,6 @@ startscript_DATA = \
 # must be tab below
 install-data-hook:
 	chmod 755 $(DESTDIR)$(sysconfdir)/xrdp/xrdp.sh
-	if [ -w /etc/init.d ]; then rm -f /etc/init.d/xrdp.sh; fi
-	if [ -w /etc/init.d ]; then $(LN_S) $(DESTDIR)$(sysconfdir)/xrdp/xrdp.sh /etc/init.d/xrdp.sh; fi
-	$(DESTDIR)$(bindir)/xrdp-keygen xrdp $(DESTDIR)$(sysconfdir)/xrdp/rsakeys.ini
+	mkdir -p $(DESTDIR)/etc/init.d
+	$(LN_S) $(sysconfdir)/xrdp/xrdp.sh $(DESTDIR)/etc/init.d/xrdp
+#	$(DESTDIR)$(bindir)/xrdp-keygen xrdp $(DESTDIR)$(sysconfdir)/xrdp/rsakeys.ini

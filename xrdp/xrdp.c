@@ -22,6 +22,10 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+#else
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #endif
 #include "xrdp.h"
 
@@ -136,6 +140,21 @@ pipe_sig(int sig_num)
 {
   /* do nothing */
   g_writeln("got SIGPIPE(%d)", sig_num);
+}
+
+/*****************************************************************************/
+void DEFAULT_CC
+child_sig(int sig_num)
+{
+  int pid;
+
+  g_writeln("got SIGCHLD(%d)", sig_num);
+
+  pid = g_waitchild();
+  if (pid > 0)
+  {
+    g_writeln("child %d exited", pid);
+  }
 }
 
 /*****************************************************************************/
@@ -501,19 +520,12 @@ main(int argc, char** argv)
   if (!no_daemon)
   {
     /* make sure we can write to pid file */
-    fd = g_file_open(XRDP_PID_FILE); /* xrdp.pid */
+    fd = open (XRDP_PID_FILE, O_RDWR | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR);
     if (fd == -1)
     {
       g_writeln("running in daemon mode with no access to pid files, quitting");
       g_exit(0);
     }
-    if (g_file_write(fd, "0", 1) == -1)
-    {
-      g_writeln("running in daemon mode with no access to pid files, quitting");
-      g_exit(0);
-    }
-    g_file_close(fd);
-    g_file_delete(XRDP_PID_FILE);
   }
   if (!no_daemon)
   {
@@ -522,6 +534,8 @@ main(int argc, char** argv)
     if (pid == -1)
     {
       g_writeln("problem forking");
+      close (fd);
+      g_file_delete(XRDP_PID_FILE);
       g_exit(1);
     }
     if (0 != pid)
@@ -543,20 +557,10 @@ main(int argc, char** argv)
   {
     /* write the pid to file */
     pid = g_getpid();
-    fd = g_file_open(XRDP_PID_FILE); /* xrdp.pid */
-    if (fd == -1)
-    {
-      g_writeln("trying to write process id to xrdp.pid");
-      g_writeln("problem opening xrdp.pid");
-      g_writeln("maybe no rights");
-    }
-    else
-    {
-      g_set_file_rights(XRDP_PID_FILE, 1, 1); /* xrdp.pid */
-      g_sprintf(text, "%d", pid);
-      g_file_write(fd, text, g_strlen(text));
-      g_file_close(fd);
-    }
+    g_set_file_rights(XRDP_PID_FILE, 1, 1); /* xrdp.pid */
+    g_sprintf(text, "%d", pid);
+    g_file_write(fd, text, g_strlen(text));
+    close (fd);
   }
 #endif
   g_threadid = tc_get_threadid();
@@ -565,6 +569,7 @@ main(int argc, char** argv)
   g_signal(9, xrdp_shutdown); /* SIGKILL */
   g_signal(13, pipe_sig); /* sig pipe */
   g_signal(15, xrdp_shutdown); /* SIGTERM */
+  g_signal_child_stop(child_sig); /* SIGCHLD */
   g_sync_mutex = tc_mutex_create();
   g_sync1_mutex = tc_mutex_create();
   g_term_event = g_create_wait_obj("xrdp_main_term");

@@ -1,6 +1,9 @@
 INCLUDES = \
   -I$(top_srcdir)/common \
-  -I$(top_srcdir)/sesman/libscp
+  -I$(top_srcdir)/sesman/libscp \
+  $(DBUS_CFLAGS) \
+  $(XAU_CFLAGS) \
+  $(XCB_CFLAGS)
 
 if SESMAN_NOPAM
 AUTH_C = verify_user.c
@@ -44,7 +47,10 @@ xrdp_sessvc_SOURCES = \
 xrdp_sesman_LDADD = \
   $(top_srcdir)/common/libcommon.la \
   $(top_srcdir)/sesman/libscp/libscp.la \
-  $(AUTH_LIB)
+  $(AUTH_LIB) \
+  $(DBUS_LIBS) \
+  $(XAU_LIBS) \
+  $(XCB_LIBS)
 
 xrdp_sessvc_LDADD = \
   $(top_srcdir)/common/libcommon.la

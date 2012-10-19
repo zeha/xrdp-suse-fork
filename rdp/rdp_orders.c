@@ -433,6 +433,8 @@ rdp_orders_process_secondary_order(struct rdp_orders* self, struct stream* s)
   in_uint16_le(s, length);
   in_uint16_le(s, flags);
   in_uint8(s, type);
+  if (!s_check_rem (s, length + 7))
+      return 0;
   next_order = s->p + length + 7;
   switch (type)
   {

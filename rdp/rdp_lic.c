@@ -293,7 +293,7 @@ static void APP_CC
 rdp_lic_process_issue(struct rdp_lic* self, struct stream* s)
 {
   void* crypt_key;
-  int length;
+  tui32 length;
   int check;
   int i;
 
@@ -320,7 +320,7 @@ rdp_lic_process_issue(struct rdp_lic* self, struct stream* s)
   {
     in_uint8s(s, length);
     in_uint32_le(s, length);
-    if (!s_check_rem(s, length))
+    if (!s_check(s) || length > (tui32) (s->end - s->p))
     {
       return;
     }

@@ -33,7 +33,11 @@ xrdpsysconf_DATA = \
 pkgdata_DATA = \
   ad256.bmp \
   xrdp256.bmp \
+  tile256.bmp \
+  opensuse256.bmp \
+  rdc256.bmp \
   sans-10.fv1 \
+  tahoma-10.fv1 \
   cursor0.cur \
   cursor1.cur
 

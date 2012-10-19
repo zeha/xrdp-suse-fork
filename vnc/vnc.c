@@ -874,6 +874,8 @@ lib_framebuffer_update(struct vnc* v)
       in_uint16_be(s, cx);
       in_uint16_be(s, cy);
       in_uint32_be(s, encoding);
+      if (cx > 8192 || cy > 8192)
+        return 1;
       if (encoding == 0) /* raw */
       {
         need_size = cx * cy * Bpp;
@@ -977,7 +979,8 @@ lib_clip_data(struct vnc* v)
   int size;
   int error;
 
-  g_free(v->clip_data);
+  if (v->clip_data)
+    g_free(v->clip_data);
   v->clip_data = 0;
   v->clip_data_size = 0;
   make_stream(s);
@@ -987,9 +990,14 @@ lib_clip_data(struct vnc* v)
   {
     in_uint8s(s, 3);
     in_uint32_be(s, size);
-    v->clip_data = (char*)g_malloc(size, 0);
-    v->clip_data_size = size;
-    error = lib_recv(v, v->clip_data, size);
+    if (size <= 0 || size > 65536)
+	error = 1;
+    if (error == 0)
+    {
+      v->clip_data = (char*)g_malloc(size, 0);
+      v->clip_data_size = size;
+      error = lib_recv(v, v->clip_data, size);
+    }
   }
   if (error == 0)
   {
@@ -1037,7 +1045,7 @@ lib_palette_update(struct vnc* v)
     in_uint8s(s, 1);
     in_uint16_be(s, first_color);
     in_uint16_be(s, num_colors);
-    init_stream(s, 8192);
+    init_stream(s, num_colors * 6);
     error = lib_recv(v, s->data, num_colors * 6);
   }
   if (error == 0)

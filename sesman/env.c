@@ -60,7 +60,7 @@ env_check_password_file(char* filename, char* password)
 
 /******************************************************************************/
 int DEFAULT_CC
-env_set_user(char* username, char* passwd_file, int display)
+env_set_user(char* username, char* passwd_file, int display, char* auth_file)
 {
   int error;
   int pw_uid;
@@ -97,6 +97,7 @@ env_set_user(char* username, char* passwd_file, int display)
       g_set_current_dir(pw_dir);
       g_sprintf(text, ":%d.0", display);
       g_setenv("DISPLAY", text, 1);
+      g_setenv("XAUTHORITY", auth_file, 1);
       if (passwd_file != 0)
       {
         if (0 == g_cfg->auth_file_path)

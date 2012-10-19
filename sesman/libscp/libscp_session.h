@@ -69,6 +69,9 @@ int
 scp_session_set_password(struct SCP_SESSION* s, char* str);
 
 int
+scp_session_set_wm(struct SCP_SESSION* s, char* str);
+
+int
 scp_session_set_hostname(struct SCP_SESSION* s, char* str);
 
 int
@@ -79,6 +82,9 @@ scp_session_set_display(struct SCP_SESSION* s, SCP_DISPLAY display);
 
 int
 scp_session_set_errstr(struct SCP_SESSION* s, char* str);
+
+int
+scp_session_set_layout(struct SCP_SESSION* s, tui16 layout);
 
 /**
  *

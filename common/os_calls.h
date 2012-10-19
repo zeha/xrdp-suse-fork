@@ -237,5 +237,13 @@ int APP_CC
 g_time1(void);
 int APP_CC
 g_time2(void);
+unsigned int APP_CC
+g_dir_open(const char * dir_name);
+void APP_CC
+g_dir_close(unsigned int handle);
+const char* APP_CC
+g_dir_read_name(unsigned int handle);
+int APP_CC
+g_gethostname(char *name, unsigned int len);
 
 #endif

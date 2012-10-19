@@ -290,10 +290,11 @@ xrdp_wm_load_static_colors(struct xrdp_wm* self)
       }
     }
     self->black     = COLOR8(0, 0, 0);
-    self->grey      = COLOR8(0xc0, 0xc0, 0xc0);
-    self->dark_grey = COLOR8(0x80, 0x80, 0x80);
-    self->blue      = COLOR8(0x00, 0x00, 0xff);
-    self->dark_blue = COLOR8(0x00, 0x00, 0x7f);
+    self->grey      = COLOR8(0xfb, 0xfb, 0xfb);
+    self->med_grey  = COLOR8(0xed, 0xed, 0xed);
+    self->dark_grey = COLOR8(0xb0, 0xb0, 0xb0);
+    self->blue      = COLOR8(0x7e, 0xa4, 0xd4);
+    self->dark_blue = COLOR8(0x4e, 0x76, 0xa8);
     self->white     = COLOR8(0xff, 0xff, 0xff);
     self->red       = COLOR8(0xff, 0x00, 0x00);
     self->green     = COLOR8(0x00, 0xff, 0x00);
@@ -302,10 +303,11 @@ xrdp_wm_load_static_colors(struct xrdp_wm* self)
   else if (self->screen->bpp == 15)
   {
     self->black     = COLOR15(0, 0, 0);
-    self->grey      = COLOR15(0xc0, 0xc0, 0xc0);
-    self->dark_grey = COLOR15(0x80, 0x80, 0x80);
-    self->blue      = COLOR15(0x00, 0x00, 0xff);
-    self->dark_blue = COLOR15(0x00, 0x00, 0x7f);
+    self->grey      = COLOR15(0xfb, 0xfb, 0xfb);
+    self->med_grey  = COLOR15(0xed, 0xed, 0xed);
+    self->dark_grey = COLOR15(0xb0, 0xb0, 0xb0);
+    self->blue      = COLOR15(0x7e, 0xa4, 0xd4);
+    self->dark_blue = COLOR15(0x4e, 0x76, 0xa8);
     self->white     = COLOR15(0xff, 0xff, 0xff);
     self->red       = COLOR15(0xff, 0x00, 0x00);
     self->green     = COLOR15(0x00, 0xff, 0x00);
@@ -313,10 +315,11 @@ xrdp_wm_load_static_colors(struct xrdp_wm* self)
   else if (self->screen->bpp == 16)
   {
     self->black     = COLOR16(0, 0, 0);
-    self->grey      = COLOR16(0xc0, 0xc0, 0xc0);
-    self->dark_grey = COLOR16(0x80, 0x80, 0x80);
-    self->blue      = COLOR16(0x00, 0x00, 0xff);
-    self->dark_blue = COLOR16(0x00, 0x00, 0x7f);
+    self->grey      = COLOR16(0xfb, 0xfb, 0xfb);
+    self->med_grey  = COLOR16(0xed, 0xed, 0xed);
+    self->dark_grey = COLOR16(0xb0, 0xb0, 0xb0);
+    self->blue      = COLOR16(0x7e, 0xa4, 0xd4);
+    self->dark_blue = COLOR16(0x4e, 0x76, 0xa8);
     self->white     = COLOR16(0xff, 0xff, 0xff);
     self->red       = COLOR16(0xff, 0x00, 0x00);
     self->green     = COLOR16(0x00, 0xff, 0x00);
@@ -324,10 +327,11 @@ xrdp_wm_load_static_colors(struct xrdp_wm* self)
   else if (self->screen->bpp == 24)
   {
     self->black     = COLOR24BGR(0, 0, 0);
-    self->grey      = COLOR24BGR(0xc0, 0xc0, 0xc0);
-    self->dark_grey = COLOR24BGR(0x80, 0x80, 0x80);
-    self->blue      = COLOR24BGR(0x00, 0x00, 0xff);
-    self->dark_blue = COLOR24BGR(0x00, 0x00, 0x7f);
+    self->grey      = COLOR24BGR(0xfb, 0xfb, 0xfb);
+    self->med_grey  = COLOR24BGR(0xed, 0xed, 0xed);
+    self->dark_grey = COLOR24BGR(0xb0, 0xb0, 0xb0);
+    self->blue      = COLOR24BGR(0x7e, 0xa4, 0xd4);
+    self->dark_blue = COLOR24BGR(0x4e, 0x76, 0xa8);
     self->white     = COLOR24BGR(0xff, 0xff, 0xff);
     self->red       = COLOR24BGR(0xff, 0x00, 0x00);
     self->green     = COLOR24BGR(0x00, 0xff, 0x00);
@@ -360,12 +364,236 @@ xrdp_wm_load_static_pointers(struct xrdp_wm* self)
 
 /*****************************************************************************/
 int APP_CC
+xrdp_wm_load_sections(struct xrdp_wm* self,
+		      struct list* string_list,
+		      struct list* data_list)
+{
+  struct list* sections;
+  struct list* section_names;
+  struct list* section_values;
+  int fd;
+  int i;
+  int j;
+  char* p;
+  char* q;
+  char* r;
+  char name[256];
+  struct xrdp_mod_data* mod_data;
+
+  sections = list_create();
+  sections->auto_free = 1;
+  section_names = list_create();
+  section_names->auto_free = 1;
+  section_values = list_create();
+  section_values->auto_free = 1;
+  fd = g_file_open(XRDP_CFG_FILE); /* xrdp.ini */
+  file_read_sections(fd, sections);
+  for (i = 0; i < sections->count; i++)
+  {
+    p = (char*)list_get_item(sections, i);
+    file_read_section(fd, p, section_names, section_values);
+    if (g_strncmp(p, "globals", 255) == 0)
+    {
+    }
+    else if (g_strncmp(p, "xsessions", 255) == 0)
+    {
+      unsigned int dir;
+      char         path[256];
+
+      g_strncpy(path, ".", 255);
+      for (j = 0; j < section_names->count; j++)
+      {
+        q = (char*)list_get_item(section_names, j);
+        r = (char*)list_get_item(section_values, j);
+	if (g_strncmp("path", q, 255) == 0)
+        {
+	  g_strncpy(path, r, 255);
+	  break;
+        }
+      }
+
+      if (g_directory_exist (path) && (dir = g_dir_open (path)))
+      {
+	const char*  file;
+	struct list* entry_names;
+	struct list* entry_values;
+
+	struct stream* s;
+	char stext[512];
+	char sname[512];
+	char svalue[512];
+	int wm_fd, len;
+	char *default_wm;
+
+	entry_names = list_create();
+	entry_names->auto_free = 1;
+	entry_values = list_create();
+	entry_values->auto_free = 1;
+
+	default_wm = g_strdup("twm");
+	g_memset(stext, 0, 512);
+	make_stream(s);
+	init_stream(s, 32 * 1024);
+	wm_fd = g_file_open("/etc/sysconfig/windowmanager");
+	len = g_file_read(wm_fd, s->data, 32 * 1024);
+	if (len > 0)
+	{
+	  s->end = s->p + len;
+	  while (file_read_line(s, stext) == 0)
+	  {
+	    if (g_strlen(stext) > 0)
+	    {
+	      file_split_name_value(stext, sname, svalue);
+	      if (g_strcmp (sname, "DEFAULT_WM") == 0)
+	      {
+		default_wm = g_strdup(svalue);
+		break;
+	      }
+	    }
+	  }
+	}
+	g_file_close(wm_fd);
+	free_stream(s);
+
+	while ((file = g_dir_read_name (dir)))
+	{
+	  int de_fd;
+	  int prepend = 0;
+
+	  if (g_pos ((char *) file, ".desktop") == -1)
+	    continue;
+
+	  g_strncpy(name, file, 255);
+	  mod_data = (struct xrdp_mod_data*)
+	      g_malloc(sizeof(struct xrdp_mod_data), 1);
+	  mod_data->names = list_create();
+	  mod_data->names->auto_free = 1;
+	  mod_data->values = list_create();
+	  mod_data->values->auto_free = 1;
+
+	  g_snprintf(name, 255, "%s/%s", path, file);
+	  de_fd = g_file_open(name);
+
+	  g_strncpy(name, file, 255);
+	  file_read_section(de_fd, "Desktop Entry", entry_names, entry_values);
+	  for (j = 0; j < entry_names->count; j++)
+	  {
+	    q = (char*)list_get_item(entry_names, j);
+	    r = (char*)list_get_item(entry_values, j);
+	    if (g_strncmp("Name", q, 255) == 0)
+	    {
+	      g_strncpy(name, r, 255);
+	    }
+	    else if (g_strncmp("Exec", q, 255) == 0)
+	    {
+	      list_add_item(mod_data->names, (long)g_strdup("exec"));
+	      list_add_item(mod_data->values, (long)g_strdup(r));
+
+	      if (default_wm && g_pos (default_wm, r) != -1)
+		prepend = 1;
+	    }
+	  }
+
+	  for (j = 0; j < section_names->count; j++)
+	  {
+	    q = (char*)list_get_item(section_names, j);
+	    r = (char*)list_get_item(section_values, j);
+	    list_add_item(mod_data->names, (long)g_strdup(q));
+	    list_add_item(mod_data->values, (long)g_strdup(r));
+	  }
+
+	  if (prepend)
+	  {
+	    list_insert_item(string_list, 0, (long)g_strdup(name));
+	    list_insert_item(data_list, 0, (long)mod_data);
+	  }
+	  else
+	  {
+	    list_add_item(string_list, (long)g_strdup(name));
+	    list_add_item(data_list, (long)mod_data);
+	  }
+	  
+	  g_file_close(de_fd);
+	}
+
+	list_delete(entry_names);
+	list_delete(entry_values);
+
+	if (default_wm)
+	  g_free (default_wm);
+
+	g_dir_close (dir);
+      }
+    }
+    else
+    {
+      g_strncpy(name, p, 255);
+      mod_data = (struct xrdp_mod_data*)
+                     g_malloc(sizeof(struct xrdp_mod_data), 1);
+      mod_data->names = list_create();
+      mod_data->names->auto_free = 1;
+      mod_data->values = list_create();
+      mod_data->values->auto_free = 1;
+      for (j = 0; j < section_names->count; j++)
+      {
+        q = (char*)list_get_item(section_names, j);
+        r = (char*)list_get_item(section_values, j);
+        if (g_strncmp("name", q, 255) == 0)
+        {
+          g_strncpy(name, r, 255);
+        }
+        list_add_item(mod_data->names, (long)g_strdup(q));
+        list_add_item(mod_data->values, (long)g_strdup(r));
+      }
+      list_add_item(string_list, (long)g_strdup(name));
+      list_add_item(data_list, (long)mod_data);
+    }
+  }
+  g_file_close(fd);
+  list_delete(sections);
+  list_delete(section_names);
+  list_delete(section_values);
+  return 0;
+}
+
+/******************************************************************************/
+static void APP_CC
+xrdp_wm_background_create(struct xrdp_wm* self)
+{
+  struct xrdp_bitmap* b;
+  char file_path[256];
+
+  /* image */
+  b = xrdp_bitmap_create(4, 4, self->screen->bpp, WND_TYPE_IMAGE, self);
+  g_snprintf(file_path, 255, "%s/opensuse256.bmp", XRDP_SHARE_PATH);
+  xrdp_bitmap_load(b, file_path, self->palette);
+  b->parent = self->screen;
+  b->owner = self->screen;
+  b->left = 0;
+  b->top = 0;
+  list_add_item(self->screen->child_list, (long)b);
+
+  /* tile */
+  b = xrdp_bitmap_create(4, 4, self->screen->bpp, WND_TYPE_TILE, self);
+  g_snprintf(file_path, 255, "%s/tile256.bmp", XRDP_SHARE_PATH);
+  xrdp_bitmap_load(b, file_path, self->palette);
+  b->parent = self->screen;
+  b->owner = self->screen;
+  b->left = 0;
+  b->top = 0;
+  b->width = self->screen->width;
+  b->height = self->screen->height;
+  list_add_item(self->screen->child_list, (long)b);
+}
+
+/*****************************************************************************/
+int APP_CC
 xrdp_wm_init(struct xrdp_wm* self)
 {
-  int fd;
+  struct xrdp_mod_data* mod_data;
   int index;
-  struct list* names;
-  struct list* values;
+  struct list* string_list;
+  struct list* data_list;
   char* q;
   char* r;
   char section_name[256];
@@ -375,63 +603,71 @@ xrdp_wm_init(struct xrdp_wm* self)
   self->screen->bg_color = self->black;
   if (self->session->client_info->rdp_autologin)
   {
-    fd = g_file_open(XRDP_CFG_FILE); /* xrdp.ini */
-    if (fd > 0)
+    string_list = list_create();
+    string_list->auto_free = 1;
+    data_list = list_create();
+    data_list->auto_free = 1;
+    xrdp_wm_load_sections (self, string_list, data_list);
+    g_strncpy(section_name, self->session->client_info->program, 255);
+    index = 0;
+    if (section_name[0] != 0)
     {
-      names = list_create();
-      names->auto_free = 1;
-      values = list_create();
-      values->auto_free = 1;
-      g_strncpy(section_name, self->session->client_info->domain, 255);
-      if (section_name[0] == 0)
+      int i;
+
+      for (i = 0; i < string_list->count; i++)
       {
-        /* if no doamin is passed, use the first item in the xrdp.ini
-           file thats not named 'globals' */
-        file_read_sections(fd, names);
-        for (index = 0; index < names->count; index++)
-        {
-          q = (char*)list_get_item(names, index);
-          if (g_strncasecmp("globals", q, 8) != 0)
-          {
-            g_strncpy(section_name, q, 255);
-            break;
-          }
-        }
+        q = (char*)list_get_item(string_list, i);
+	if (g_strcasecmp(section_name, q) == 0)
+	{
+	  index = i;
+          break;
+	}
       }
-      list_clear(names);
-      if (file_read_section(fd, section_name, names, values) == 0)
-      {
-        for (index = 0; index < names->count; index++)
-        {
-          q = (char*)list_get_item(names, index);
-          r = (char*)list_get_item(values, index);
-          if (g_strncmp("password", q, 255) == 0)
-          {
-            list_add_item(self->mm->login_names, (long)g_strdup("password"));
-            list_add_item(self->mm->login_values,
-                   (long)g_strdup(self->session->client_info->password));
-          }
-          else if (g_strncmp("username", q, 255) == 0)
-          {
-            list_add_item(self->mm->login_names, (long)g_strdup("username"));
-            list_add_item(self->mm->login_values,
-                   (long)g_strdup(self->session->client_info->username));
-          }
-          else
-          {
-            list_add_item(self->mm->login_names, (long)g_strdup(q));
-            list_add_item(self->mm->login_values, (long)g_strdup(r));
-          }
-        }
-        xrdp_wm_set_login_mode(self, 2);
-      }
-      list_delete(names);
-      list_delete(values);
-      g_file_close(fd);
     }
+    mod_data = (struct xrdp_mod_data*) list_get_item(data_list, index);
+    if (mod_data != 0)
+    {
+      for (index = 0; index < mod_data->names->count; index++)
+      {
+        q = (char*)list_get_item(mod_data->names, index);
+	r = (char*)list_get_item(mod_data->values, index);
+	if (g_strncmp("password", q, 255) == 0)
+        {
+          list_add_item(self->mm->login_names, (long)g_strdup("password"));
+	  list_add_item(self->mm->login_values,
+			(long)g_strdup(self->session->client_info->password));
+	}
+	else if (g_strncmp("username", q, 255) == 0)
+	{
+          list_add_item(self->mm->login_names, (long)g_strdup("username"));
+	  list_add_item(self->mm->login_values,
+			(long)g_strdup(self->session->client_info->username));
+	}
+	else
+	{
+          list_add_item(self->mm->login_names, (long)g_strdup(q));
+	  list_add_item(self->mm->login_values, (long)g_strdup(r));
+	}
+      }
+    }
+
+    xrdp_wm_set_login_mode(self, 2);
+
+    for (index = 0; index < data_list->count; index++)
+    {
+      mod_data = (struct xrdp_mod_data*)list_get_item(data_list, index);
+      if (mod_data != 0)
+      {
+        list_delete(mod_data->names);
+	list_delete(mod_data->values);
+      }
+    }
+    list_delete(string_list);
+    list_delete(data_list);
   }
   else
   {
+    xrdp_wm_background_create(self);
     xrdp_login_wnd_create(self);
     /* clear screen */
     xrdp_bitmap_invalidate(self->screen, 0);
@@ -1255,8 +1491,8 @@ xrdp_wm_process_channel_data(struct xrdp_wm* self, int channel_id,
   {
     if (self->mm->mod->mod_event != 0)
     {
-      self->mm->mod->mod_event(self->mm->mod, 0x5555, channel_id, (long)data,
-                               data_len, 0);
+      return self->mm->mod->mod_event(self->mm->mod, 0x5555, channel_id,
+				      (long)data, data_len, 0);
     }
   }
   return 0;
@@ -1329,44 +1565,26 @@ xrdp_wm_login_mode_changed(struct xrdp_wm* self)
   {
     xrdp_wm_set_login_mode(self, 3); /* put the wm in connected mode */
     xrdp_wm_delete_all_childs(self);
+    xrdp_wm_background_create(self);
+    xrdp_bitmap_invalidate(self->screen, 0);
     self->dragging = 0;
     xrdp_mm_connect(self->mm);
+  }
+  else if (self->login_mode == 4)
+  {
+    /* intermediate state used by dmx module */
+    xrdp_wm_set_login_mode(self, 5);
   }
   else if (self->login_mode == 10)
   {
     xrdp_wm_delete_all_childs(self);
+    xrdp_bitmap_invalidate(self->screen, 0);
     self->dragging = 0;
     xrdp_wm_set_login_mode(self, 11);
   }
-  return 0;
-}
-
-/******************************************************************************/
-/* returns error */
-int APP_CC
-xrdp_wm_app_sck_signal(struct xrdp_wm* self, int app_sck)
-{
-  if (self->login_mode == 3)
+  else if (self->login_mode == 20)
   {
-    if (xrdp_mm_signal(self->mm) != 0)
-    {
-      return 1;
-    }
-  }
-  else if (self->login_mode > 9)
-  {
-    if (self->mm->mod == 0)
-    {
-      return 1;
-    }
-    if (self->mm->mod->mod_signal == 0)
-    {
-      return 1;
-    }
-    if (self->mm->mod->mod_signal(self->mm->mod) != 0)
-    {
-      return 1;
-    }
+    return 1; /* end session */
   }
   return 0;
 }
@@ -1401,30 +1619,7 @@ xrdp_wm_log_wnd_notify(struct xrdp_bitmap* wnd,
   {
     if (sender->id == 1) /* ok button */
     {
-      /* close the log window */
-      MAKERECT(rect, wnd->left, wnd->top, wnd->width, wnd->height);
-      xrdp_bitmap_delete(wnd);
-      xrdp_bitmap_invalidate(wm->screen, &rect);
-      /* if module is gone, reset the session when ok is clicked */
-      if (wm->mm->mod_handle == 0)
-      {
-        /* make sure autologin is off */
-        wm->session->client_info->rdp_autologin = 0;
-        xrdp_wm_set_login_mode(wm, 0); /* reset session */
-      }
-    }
-  }
-  else if (msg == WM_PAINT) /* 3 */
-  {
-    painter = (struct xrdp_painter*)param1;
-    if (painter != 0)
-    {
-      painter->fg_color = wnd->wm->black;
-      for (index = 0; index < wnd->wm->log->count; index++)
-      {
-        text = (char*)list_get_item(wnd->wm->log, index);
-        xrdp_painter_draw_text(painter, wnd, 10, 30 + index * 15, text);
-      }
+      xrdp_wm_set_login_mode(wm, 20); /* end session */
     }
   }
   return 0;
@@ -1440,28 +1635,66 @@ xrdp_wm_log_msg(struct xrdp_wm* self, char* msg)
   if (self->log_wnd == 0)
   {
     /* log window */
-    self->log_wnd = xrdp_bitmap_create(400, 400, self->screen->bpp,
+    self->log_wnd = xrdp_bitmap_create(620, 430, self->screen->bpp,
                                        WND_TYPE_WND, self);
-    list_add_item(self->screen->child_list, (long)self->log_wnd);
+    list_insert_item(self->screen->child_list, 0, (long)self->log_wnd);
     self->log_wnd->parent = self->screen;
     self->log_wnd->owner = self->screen;
     self->log_wnd->bg_color = self->grey;
     self->log_wnd->left = 10;
-    self->log_wnd->top = 10;
+    self->log_wnd->top = 40;
     set_string(&(self->log_wnd->caption1), "Connection Log");
+
+    /* edit */
+    self->log_edit = xrdp_bitmap_create(self->log_wnd->width - 18,
+					self->log_wnd->height - 72,
+					self->screen->bpp,
+					WND_TYPE_EDIT, self);
+    list_insert_item(self->log_wnd->child_list, 0, (long)self->log_edit);
+    self->log_edit->parent = self->log_wnd;
+    self->log_edit->owner = self->log_wnd;
+    self->log_edit->left = 9;
+    self->log_edit->top = 30;
+    self->log_edit->id = 2;
+    self->log_edit->pointer = 0;
+    self->log_edit->tab_stop = 0;
+    self->log_edit->edit_pos = 0;
+    set_string(&(self->log_edit->caption1), msg);
+
     /* ok button */
     but = xrdp_bitmap_create(60, 25, self->screen->bpp, WND_TYPE_BUTTON, self);
     list_insert_item(self->log_wnd->child_list, 0, (long)but);
     but->parent = self->log_wnd;
     but->owner = self->log_wnd;
-    but->left = (400 - 60) - 10;
-    but->top = (400 - 25) - 10;
+    but->left = (self->log_wnd->width - 60) - 10;
+    but->top = (self->log_wnd->height - 25) - 10;
     but->id = 1;
     but->tab_stop = 1;
     set_string(&but->caption1, "OK");
     self->log_wnd->focused_control = but;
     /* set notify function */
     self->log_wnd->notify = xrdp_wm_log_wnd_notify;
+  }
+  else if (self->log_edit->caption1)
+  {
+    char buf[8192];
+    int  pos;
+    int  len;
+    int  index;
+
+    msg = (char *)list_get_item(self->log, 0);
+    len = g_strlen(msg);
+    g_sprintf(buf, "%s", msg);
+    pos = len;
+    for (index = 1; index < self->log->count; index++)
+    {
+      msg = (char *)list_get_item(self->log, index);
+      len = g_strlen(msg) + 1;
+      if (pos + len + 1 < sizeof(buf))
+	g_sprintf(buf + pos, "\n%s", msg);
+      pos += len;
+    }
+    set_string(&self->log_edit->caption1, buf);
   }
   xrdp_wm_set_focused(self, self->log_wnd);
   xrdp_bitmap_invalidate(self->log_wnd, 0);
@@ -1545,15 +1778,18 @@ xrdp_wm_check_wait_objs(struct xrdp_wm* self)
   if (g_is_wait_obj_set(self->login_mode_event))
   {
     g_reset_wait_obj(self->login_mode_event);
-    xrdp_wm_login_mode_changed(self);
+    rv = xrdp_wm_login_mode_changed(self);
   }
-  if (self->mm != 0)
+  if (rv == 0)
   {
-    if (self->mm->sck_obj != 0)
+    if (self->mm != 0)
     {
-      if (g_is_wait_obj_set(self->mm->sck_obj))
+      if (self->mm->sck_obj != 0)
       {
-        rv = xrdp_mm_signal(self->mm); 
+        if (g_is_wait_obj_set(self->mm->sck_obj))
+        {
+          rv = xrdp_mm_signal(self->mm); 
+        }
       }
     }
   }

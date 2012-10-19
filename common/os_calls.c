@@ -60,6 +60,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <dirent.h>
 #include <locale.h>
 
 #include "os_calls.h"
@@ -1626,6 +1627,13 @@ g_load_library(char* in)
 #if defined(_WIN32)
   return (long)LoadLibraryA(in);
 #else
+  char file[512];
+  void *handle;
+  g_snprintf(file, sizeof (file), XRDP_LIB_PATH "/%s", in);
+  file[sizeof (file) - 1] = '\0';
+  handle = dlopen(file, RTLD_LOCAL | RTLD_LAZY);
+  if (handle)
+    return (long) handle;
   return (long)dlopen(in, RTLD_LOCAL | RTLD_LAZY);
 #endif
 }
@@ -2028,5 +2036,56 @@ g_time2(void)
 
   num_ticks = times(&tm);
   return (int)(num_ticks * 10);
+#endif
+}
+
+/*****************************************************************************/
+/* returns 0 on error, else return handle */
+unsigned int APP_CC
+g_dir_open(const char * dir_name)
+{
+#if defined(_WIN32)
+  return 0;
+#else
+  return (unsigned int) opendir (dir_name);
+#endif
+}
+
+/*****************************************************************************/
+void APP_CC
+g_dir_close(unsigned int handle)
+{
+#if defined(_WIN32)
+#else
+  closedir ((DIR *) handle);
+#endif
+}
+
+/*****************************************************************************/
+const char* APP_CC
+g_dir_read_name(unsigned int handle)
+{
+#if defined(_WIN32)
+  return 0;
+#else
+  struct dirent *ent;
+
+  ent = readdir ((DIR *) handle);
+  if (!ent)
+    return 0;
+
+  return ent->d_name;
+#endif
+}
+
+/*****************************************************************************/
+/* returns -1 on error, else 0 is returned */
+int APP_CC
+g_gethostname(char *name, unsigned int len)
+{
+#if defined(_WIN32)
+  return -1;
+#else
+  return gethostname (name, len);
 #endif
 }

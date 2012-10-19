@@ -45,11 +45,12 @@ env_check_password_file(char* filename, char* password);
  * @param username Username 
  * @param passwd_file VNC password file
  * @param display The session display
+ * @param auth_File The session authorization file
  * @return 0 on success, g_getuser_info() error codes on error
  *
  */
 int DEFAULT_CC
-env_set_user(char* username, char* passwd_file, int display);
+env_set_user(char* username, char* passwd_file, int display, char* auth_file);
 
 #endif
 

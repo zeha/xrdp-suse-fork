@@ -33,6 +33,7 @@
 
 #define SESMAN_SESSION_TYPE_XRDP  1
 #define SESMAN_SESSION_TYPE_XVNC  2
+#define SESMAN_SESSION_TYPE_XDMX  3
 
 #define SESMAN_SESSION_STATUS_ACTIVE        1
 #define SESMAN_SESSION_STATUS_IDLE          2
@@ -64,6 +65,7 @@ struct session_item
   int width;
   int height;
   int bpp;
+  int layout;
   long data;
 
   /* status info */
@@ -74,6 +76,9 @@ struct session_item
   struct session_date connect_time;
   struct session_date disconnect_time;
   struct session_date idle_time;
+
+  /* console kit */
+  char *ck_cookie;
 };
 
 struct session_chain
@@ -101,8 +106,9 @@ session_get_bydata(char* name, int width, int height, int bpp);
  *
  */
 int DEFAULT_CC
-session_start(int width, int height, int bpp, char* username, char* password,
-              long data, unsigned char type);
+session_start(int width, int height, int bpp, int layout,
+	      char* username, char* password,
+              char* wm, long data, unsigned char type);
 
 /**
  *

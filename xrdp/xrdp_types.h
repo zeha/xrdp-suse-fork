@@ -78,7 +78,8 @@ struct xrdp_mod
   int (*server_get_channel_id)(struct xrdp_mod* v, char* name);
   int (*server_send_to_channel)(struct xrdp_mod* v, int channel_id,
                                 char* data, int data_len);
-  long server_dumby[100 - 24]; /* align, 100 minus the number of server 
+  int (*server_set_login_mode)(struct xrdp_mod* v, int login_mode);
+  long server_dumby[100 - 25]; /* align, 100 minus the number of server 
                                   functions above */
   /* common */
   long handle; /* pointer to self as int */
@@ -209,6 +210,7 @@ struct xrdp_wm
   /* generic colors */
   int black;
   int grey;
+  int med_grey;
   int dark_grey;
   int blue;
   int dark_blue;
@@ -247,6 +249,7 @@ struct xrdp_wm
   /* session log */
   struct list* log;
   struct xrdp_bitmap* log_wnd;
+  struct xrdp_bitmap* log_edit;
   int login_mode;
   tbus login_mode_event;
   struct xrdp_mm* mm;
@@ -318,6 +321,8 @@ struct xrdp_bitmap
   /* for bitmap */
   int bpp;
   int line_size; /* in bytes */
+  int line_width;
+  int lines;
   int do_not_free_data;
   char* data;
   /* for all but bitmap */
@@ -356,7 +361,7 @@ struct xrdp_bitmap
 };
 
 #define NUM_FONTS 0x4e00
-#define DEFAULT_FONT_NAME "sans-10.fv1"
+#define DEFAULT_FONT_NAME "tahoma-10.fv1"
 
 /* font */
 struct xrdp_font

@@ -29,6 +29,7 @@
 #include "list.h"
 #include "file.h"
 #include "sesman.h"
+#include "defines.h"
 
 extern struct config_sesman* g_cfg;
 
@@ -88,9 +89,10 @@ config_read(struct config_sesman* cfg)
   /* read global config */
   config_read_globals(fd, cfg, param_n, param_v);
 
-  /* read Xvnc/X11rdp parameter list */
+  /* read Xvnc/X11rdp/Xdmx parameter list */
   config_read_vnc_params(fd, cfg, param_n, param_v);
   config_read_rdp_params(fd, cfg, param_n, param_v);
+  config_read_dmx_params(fd, cfg, param_n, param_v);
 
   /* read logging config */
   config_read_logging(fd, &(cfg->log), param_n, param_v);
@@ -340,6 +342,10 @@ config_read_sessions(int file, struct config_sessions* se, struct list* param_n,
     if (0 == g_strcasecmp(buf, SESMAN_CFG_SESS_MAX))
     {
       se->max_sessions = g_atoi((char*)list_get_item(param_v, i));
+      if (se->max_sessions > MAX_SESSIONS_LIMIT)
+	  se->max_sessions = MAX_SESSIONS_LIMIT;
+      else if (se->max_sessions < 1)
+	  se->max_sessions = 1;
     }
     if (0 == g_strcasecmp(buf, SESMAN_CFG_SESS_KILL_DISC))
     {
@@ -421,3 +427,30 @@ config_read_vnc_params(int file, struct config_sesman* cs, struct list* param_n,
   return 0;
 }
 
+/******************************************************************************/
+int DEFAULT_CC
+config_read_dmx_params(int file, struct config_sesman* cs, struct list* param_n,
+                       struct list* param_v)
+{
+  int i;
+
+  list_clear(param_v);
+  list_clear(param_n);
+
+  cs->dmx_params=list_create();
+
+  file_read_section(file, SESMAN_CFG_DMX_PARAMS, param_n, param_v);
+  for (i = 0; i < param_n->count; i++)
+  {
+    list_add_item(cs->dmx_params, (long)g_strdup((char*)list_get_item(param_v, i)));
+  }
+
+  /* printing security config */
+  g_printf("Xdmx parameters:\r\n");
+  for (i = 0; i < cs->dmx_params->count; i++)
+  {
+    g_printf("\tParameter %02d                   %s\r\n", i, (char*)list_get_item(cs->dmx_params, i));
+  }
+
+  return 0;
+}

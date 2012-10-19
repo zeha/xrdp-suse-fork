@@ -48,9 +48,11 @@ scp_session_create()
 
   s->username = 0;
   s->password = 0;
+  s->wm = 0;
   s->hostname = 0;
   s->errstr = 0;
   s->locale[0]='\0';
+  s->layout = 0x409;
 
   return s;
 }
@@ -66,6 +68,9 @@ scp_session_set_type(struct SCP_SESSION* s, tui8 type)
       break;
     case SCP_SESSION_TYPE_XRDP:
       s->type = SCP_SESSION_TYPE_XRDP;
+      break;
+    case SCP_SESSION_TYPE_XDMX:
+      s->type = SCP_SESSION_TYPE_XDMX;
       break;
     case SCP_SESSION_TYPE_MANAGE:
       s->type = SCP_SESSION_TYPE_MANAGE;
@@ -204,6 +209,28 @@ scp_session_set_password(struct SCP_SESSION* s, char* str)
 
 /*******************************************************************/
 int
+scp_session_set_wm(struct SCP_SESSION* s, char* str)
+{
+  if (0 == str)
+  {
+    log_message(s_log, LOG_LEVEL_WARNING, "[session:%d] set_wm: null wm", __LINE__);
+    return 1;
+  }
+  if (0 != s->wm)
+  {
+    g_free(s->wm);
+  }
+  s->wm = g_strdup(str);
+  if (0 == s->wm)
+  {
+    log_message(s_log, LOG_LEVEL_WARNING, "[session:%d] set_wm: strdup error", __LINE__);
+    return 1;
+  }
+  return 0;
+}
+
+/*******************************************************************/
+int
 scp_session_set_hostname(struct SCP_SESSION* s, char* str)
 {
   if (0 == str)
@@ -301,6 +328,14 @@ scp_session_set_addr(struct SCP_SESSION* s, int type, void* addr)
     default:
       return 1;
   }
+  return 0;
+}
+
+/*******************************************************************/
+int
+scp_session_set_layout(struct SCP_SESSION* s, tui16 layout)
+{
+  s->layout = layout;
   return 0;
 }
 

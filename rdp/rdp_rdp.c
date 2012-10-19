@@ -411,8 +411,27 @@ rdp_rdp_process_color_pointer_pdu(struct rdp_rdp* self, struct stream* s)
   in_uint16_le(s, cursor->height);
   in_uint16_le(s, mlen); /* mask length */
   in_uint16_le(s, dlen); /* data length */
-  in_uint8a(s, cursor->data, dlen);
-  in_uint8a(s, cursor->mask, mlen);
+
+  g_memset (cursor->data, 0, sizeof (cursor->data));
+  if (dlen <= sizeof (cursor->data))
+  {
+    in_uint8a(s, cursor->data, dlen);
+  }
+  else
+  {
+    in_uint8s(s, dlen);
+  }
+
+  g_memset (cursor->mask, 0, sizeof (cursor->mask));
+  if (mlen <= sizeof (cursor->mask))
+  {
+    in_uint8a(s, cursor->mask, mlen);
+  }
+  else
+  {
+    in_uint8s(s, mlen);
+  }
+
   self->mod->server_set_cursor(self->mod, cursor->x, cursor->y,
                                cursor->data, cursor->mask);
 }
@@ -514,6 +533,8 @@ rdp_rdp_process_bitmap_updates(struct rdp_rdp* self, struct stream* s)
   in_uint16_le(s, num_updates);
   for (i = 0; i < num_updates; i++)
   {
+    if (!s_check_rem (s, 18))
+      return;
     in_uint16_le(s, left);
     in_uint16_le(s, top);
     in_uint16_le(s, right);
@@ -526,6 +547,8 @@ rdp_rdp_process_bitmap_updates(struct rdp_rdp* self, struct stream* s)
     in_uint16_le(s, bufsize);
     cx = (right - left) + 1;
     cy = (bottom - top) + 1;
+    if (width > 8192 || height > 8192 || bpp > 32)
+	return;
     bmpdata0 = (char*)g_malloc(width * height * Bpp, 0);
     if (compress)
     {
@@ -535,10 +558,14 @@ rdp_rdp_process_bitmap_updates(struct rdp_rdp* self, struct stream* s)
       }
       else
       {
+        if (!s_check_rem (s, 8))
+	  return;
         in_uint8s(s, 2); /* pad */
         in_uint16_le(s, size);
         in_uint8s(s, 4); /* line_size, final_size */
       }
+      if (!s_check_rem (s, size))
+	  return;
       in_uint8p(s, data, size);
       rdp_bitmap_decompress(bmpdata0, width, height, data, size, Bpp);
       bmpdata1 = rdp_orders_convert_bitmap(bpp, self->mod->xrdp_bpp,
@@ -549,6 +576,8 @@ rdp_rdp_process_bitmap_updates(struct rdp_rdp* self, struct stream* s)
     }
     else /* not compressed */
     {
+      if (!s_check_rem (s, width * height * Bpp))
+	return;
       for (y = 0; y < height; y++)
       {
         data = bmpdata0 + ((height - y) - 1) * (width * Bpp);

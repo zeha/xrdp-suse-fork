@@ -200,12 +200,14 @@ xrdp_mm_send_login(struct xrdp_mm* self)
   int count;
   char* username;
   char* password;
+  char* exec;
   char* name;
   char* value;
 
   xrdp_wm_log_msg(self->wm, "sending login info to sesman");
   username = 0;
   password = 0;
+  exec = "";
   self->code = 0;
   count = self->login_names->count;
   for (index = 0; index < count; index++)
@@ -220,9 +222,18 @@ xrdp_mm_send_login(struct xrdp_mm* self)
     {
       password = value;
     }
+    else if (g_strcasecmp(name, "exec") == 0)
+    {
+      exec = value;
+    }
     else if (g_strcasecmp(name, "lib") == 0)
     {
-      if ((g_strcasecmp(value, "libxup.so") == 0) ||
+      if ((g_strcasecmp(value, "libdmx.so") == 0) ||
+          (g_strcasecmp(value, "dmx.dll") == 0))
+      {
+        self->code = 20;
+      }
+      else if ((g_strcasecmp(value, "libxup.so") == 0) ||
           (g_strcasecmp(value, "xup.dll") == 0))
       {
         self->code = 10;
@@ -245,15 +256,19 @@ xrdp_mm_send_login(struct xrdp_mm* self)
   index = g_strlen(password);
   out_uint16_be(s, index);
   out_uint8a(s, password, index);
+  index = g_strlen(exec);
+  out_uint16_be(s, index);
+  out_uint8a(s, exec, index);
   out_uint16_be(s, self->wm->screen->width);
   out_uint16_be(s, self->wm->screen->height);
   out_uint16_be(s, self->wm->screen->bpp);
+  out_uint16_be(s, self->wm->session->client_info->keylayout);
   s_mark_end(s);
   s_pop_layer(s, channel_hdr);
   out_uint32_be(s, 0); /* version */
   index = s->end - s->data;
   out_uint32_be(s, index); /* size */
-  rv = xrdp_mm_send(self, s->data, index);
+  rv = xrdp_mm_send(self, s->data, s->end - s->data);
   free_stream(s);
   return rv;
 }
@@ -382,6 +397,7 @@ xrdp_mm_setup_mod1(struct xrdp_mm* self)
       self->mod->server_query_channel = server_query_channel;
       self->mod->server_get_channel_id = server_get_channel_id;
       self->mod->server_send_to_channel = server_send_to_channel;
+      self->mod->server_set_login_mode = server_set_login_mode;
     }
   }
   /* id self->mod is null, there must be a problem */
@@ -427,6 +443,10 @@ xrdp_mm_setup_mod2(struct xrdp_mm* self)
       else if (self->code == 10) /* X11rdp */
       {
         g_snprintf(text, 255, "%d", 6200 + self->display);
+      }
+      else if (self->code == 20) /* Xdmx */
+      {
+        g_snprintf(text, 255, "%d", 6000 + self->display);
       }
       else
       {
@@ -511,7 +531,8 @@ xrdp_mm_process_login_response(struct xrdp_mm* self, struct stream* s)
     {
       if (xrdp_mm_setup_mod2(self) == 0)
       {
-        xrdp_wm_set_login_mode(self->wm, 10);
+	if (self->wm->login_mode == 3)
+	  xrdp_wm_set_login_mode(self->wm, 10);
         self->wm->dragging = 0;
       }
     }
@@ -526,7 +547,7 @@ xrdp_mm_process_login_response(struct xrdp_mm* self, struct stream* s)
   g_tcp_close(self->sck);
   self->sck = 0;
   self->connected_state = 0;
-  if (self->wm->login_mode != 10)
+  if (self->wm->login_mode < 4)
   {
     xrdp_wm_set_login_mode(self->wm, 11);
     xrdp_mm_module_cleanup(self);
@@ -634,10 +655,11 @@ xrdp_mm_connect(struct xrdp_mm* self)
     {
       if (xrdp_mm_setup_mod2(self) == 0)
       {
-        xrdp_wm_set_login_mode(self->wm, 10);
+	if (self->wm->login_mode == 3)
+	  xrdp_wm_set_login_mode(self->wm, 10);
       }
     }
-    if (self->wm->login_mode != 10)
+    if (self->wm->login_mode < 4)
     {
       xrdp_wm_set_login_mode(self->wm, 11);
       xrdp_mm_module_cleanup(self);
@@ -1027,4 +1049,14 @@ server_send_to_channel(struct xrdp_mod* mod, int channel_id,
 
   wm = (struct xrdp_wm*)mod->wm;
   return libxrdp_send_to_channel(wm->session, channel_id, data, data_len);
+}
+
+/*****************************************************************************/
+int DEFAULT_CC
+server_set_login_mode(struct xrdp_mod* mod, int login_mode)
+{
+  struct xrdp_wm* wm;
+
+  wm = (struct xrdp_wm*)mod->wm;
+  return xrdp_wm_set_login_mode (wm, login_mode);
 }

@@ -602,13 +602,13 @@ xrdp_painter_copy(struct xrdp_painter* self,
     y += dy;
     palette_id = 0;
     j = srcy;
-    while (j < src->height)
+    while (j < src->lines)
     {
       i = srcx;
-      while (i < src->width)
+      while (i < src->line_width)
       {
-        w = MIN(64, src->width - i);
-        h = MIN(64, src->height - j);
+        w = MIN(64, src->line_width - i);
+        h = MIN(64, src->lines - j);
         b = xrdp_bitmap_create(w, h, self->wm->screen->bpp, 0, self->wm);
         xrdp_bitmap_copy_box_with_crc(src, b, i, j, w, h);
         bitmap_id = xrdp_cache_add_bitmap(self->wm->cache, b);

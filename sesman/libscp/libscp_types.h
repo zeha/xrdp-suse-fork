@@ -41,7 +41,8 @@
 
 #define SCP_SESSION_TYPE_XVNC    0x00
 #define SCP_SESSION_TYPE_XRDP    0x01
-#define SCP_SESSION_TYPE_MANAGE  0x02
+#define SCP_SESSION_TYPE_XDMX    0x02
+#define SCP_SESSION_TYPE_MANAGE  0x03
 
 #define SCP_ADDRESS_TYPE_IPV4 0x00
 #define SCP_ADDRESS_TYPE_IPV6 0x01
@@ -77,11 +78,13 @@ struct SCP_SESSION
   char* username;
   char* password;
   char* hostname;
+  char* wm;
   tui8  addr_type;
   tui32 ipv4addr;
   tui8  ipv6addr[16];
   tui16 display;
   char* errstr;
+  tui16 layout;
 };
 
 struct SCP_DISCONNECTED_SESSION

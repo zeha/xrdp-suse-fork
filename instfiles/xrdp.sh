@@ -4,8 +4,19 @@
 # maintaned by Jay Sorg
 # chkconfig: 2345 11 89
 # description: starts xrdp
+#
+### BEGIN INIT INFO
+# Provides:          xrdp
+# Required-Start:    $remote_fs
+# Should-Start:      ypbind $syslog firstboot resmgr winbind acpid
+# Should-Stop:       $null
+# Required-Stop:     $null
+# Default-Start:     5
+# Default-Stop:
+# Description:       Start the xrdp daemon
+### END INIT INFO    
 
-SBINDIR=/usr/local/sbin
+SBINDIR=/usr/sbin
 LOG=/dev/null
 CFGDIR=/etc/xrdp
 
@@ -27,26 +38,25 @@ fi
 
 xrdp_start()
 {
-  echo -n "Starting: xrdp and sesman . . "
-  $SBINDIR/xrdp >> $LOG
+  echo "Starting sesman daemon"
   $SBINDIR/xrdp-sesman >> $LOG
-  echo "."
-  sleep 1
+  echo "Starting xrdp daemon"
+  $SBINDIR/xrdp >> $LOG
   return 0;
 }
 
 xrdp_stop()
 {
-  echo -n "Stopping: xrdp and sesman . . "
-  $SBINDIR/xrdp-sesman --kill >> $LOG
+  echo "Stopping xrdp daemon"
   $SBINDIR/xrdp --kill >> $LOG
-  echo "."
+  echo "Stopping sesman daemon"
+  $SBINDIR/xrdp-sesman --kill >> $LOG
   return 0;
 }
 
 is_xrdp_running()
 {
-  ps u --noheading -C xrdp | grep -q -i xrdp
+  ps u --noheading -C xrdp | grep -q -i $SBINDIR/xrdp
   if test $? -eq 0
   then
     return 1;
@@ -57,7 +67,7 @@ is_xrdp_running()
 
 is_sesman_running()
 {
-  ps u --noheading -C xrdp-sesman | grep -q -i xrdp-sesman
+  ps u --noheading -C xrdp-sesman | grep -q -i $SBINDIR/xrdp-sesman
   if test $? -eq 0
   then
     return 1;
@@ -122,7 +132,6 @@ case "$1" in
     ;;
   force-reload|restart)
     check_up
-    echo "Restarting xrdp ..."
     xrdp_stop
     is_xrdp_running
     while ! test $? -eq 0

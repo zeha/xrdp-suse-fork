@@ -98,7 +98,9 @@ xrdp_bitmap_create(int width, int height, int bpp,
     case 15: Bpp = 2; break;
     case 16: Bpp = 2; break;
   }
-  if (self->type == WND_TYPE_BITMAP || self->type == WND_TYPE_IMAGE)
+  if (self->type == WND_TYPE_BITMAP ||
+      self->type == WND_TYPE_IMAGE ||
+      self->type == WND_TYPE_TILE)
   {
     self->data = (char*)g_malloc(width * height * Bpp, 0);
   }
@@ -107,6 +109,8 @@ xrdp_bitmap_create(int width, int height, int bpp,
     self->child_list = list_create();
   }
   self->line_size = width * Bpp;
+  self->line_width = width;
+  self->lines = height;
   if (self->type == WND_TYPE_COMBO)
   {
     self->string_list = list_create();
@@ -132,6 +136,8 @@ xrdp_bitmap_create_with_data(int width, int height,
   self->height = height;
   self->bpp = bpp;
   self->data = data;
+  self->line_width = width;
+  self->lines = height;
   self->do_not_free_data = 1;
   self->wm = wm;
   return self;
@@ -260,21 +266,25 @@ xrdp_bitmap_set_focus(struct xrdp_bitmap* self, int focused)
   painter = xrdp_painter_create(self->wm, self->wm->session);
   xrdp_painter_font_needed(painter);
   xrdp_painter_begin_update(painter);
+
+  /* bottom dark gray line */
+  painter->fg_color = self->wm->dark_grey;
+  xrdp_painter_fill_rect(painter, self, 2, 22, self->width - 4, 1); 
   if (focused)
   {
     /* active title bar */
-    painter->fg_color = self->wm->blue;
-    xrdp_painter_fill_rect(painter, self, 3, 3, self->width - 5, 18);
+    painter->fg_color = self->wm->dark_blue;
+    xrdp_painter_fill_rect(painter, self, 2, 2, self->width - 4, 20);
     painter->fg_color = self->wm->white;
   }
   else
   {
     /* inactive title bar */
     painter->fg_color = self->wm->dark_grey;
-    xrdp_painter_fill_rect(painter, self, 3, 3, self->width - 5, 18);
+    xrdp_painter_fill_rect(painter, self, 2, 2, self->width - 4, 20);
     painter->fg_color = self->wm->black;
   }
-  xrdp_painter_draw_text(painter, self, 4, 4, self->caption1);
+  xrdp_painter_draw_text(painter, self, 8, 4, self->caption1);
   xrdp_painter_end_update(painter);
   xrdp_painter_delete(painter);
   return 0;
@@ -303,17 +313,7 @@ int APP_CC
 xrdp_bitmap_resize(struct xrdp_bitmap* self, int width, int height)
 {
   int Bpp;
-
-  if ((width == self->width) && (height == self->height))
-  {
-    return 0;
-  }
-  if (self->do_not_free_data)
-  {
-    return 1;
-  }
-  self->width = width;
-  self->height = height;
+  
   Bpp = 4;
   switch (self->bpp)
   {
@@ -321,9 +321,25 @@ xrdp_bitmap_resize(struct xrdp_bitmap* self, int width, int height)
     case 15: Bpp = 2; break;
     case 16: Bpp = 2; break;
   }
+ 
+  if ((width * Bpp == self->line_size) && (height == self->lines))
+  {
+    return 0;
+  }
+  if (self->do_not_free_data)
+  {
+    return 1;
+  }
+  if (self->type == WND_TYPE_IMAGE)
+  {
+    self->width = width;
+    self->height = height;
+  }
   g_free(self->data);
   self->data = (char*)g_malloc(width * height * Bpp, 0);
   self->line_size = width * Bpp;
+  self->line_width = width;
+  self->lines = height;
   return 0;
 }
 
@@ -413,9 +429,9 @@ xrdp_bitmap_load(struct xrdp_bitmap* self, const char* filename, int* palette)
       {
         g_file_read(fd, data + i * header.image_width, header.image_width);
       }
-      for (i = 0; i < self->height; i++)
+      for (i = 0; i < self->lines; i++)
       {
-        for (j = 0; j < self->width; j++)
+        for (j = 0; j < self->line_width; j++)
         {
           k = (unsigned char)data[i * header.image_width + j];
           color = palette1[k];
@@ -464,19 +480,19 @@ xrdp_bitmap_get_pixel(struct xrdp_bitmap* self, int x, int y)
   {
     return 0;
   }
-  if (x >= 0 && x < self->width && y >= 0 && y < self->height)
+  if (x >= 0 && x < self->line_width && y >= 0 && y < self->lines)
   {
     if (self->bpp == 8)
     {
-      return GETPIXEL8(self->data, x, y, self->width);
+      return GETPIXEL8(self->data, x, y, self->line_width);
     }
     else if (self->bpp == 15 || self->bpp == 16)
     {
-      return GETPIXEL16(self->data, x, y, self->width);
+      return GETPIXEL16(self->data, x, y, self->line_width);
     }
     else if (self->bpp == 24)
     {
-      return GETPIXEL32(self->data, x, y, self->width);
+      return GETPIXEL32(self->data, x, y, self->line_width);
     }
   }
   return 0;
@@ -494,19 +510,19 @@ xrdp_bitmap_set_pixel(struct xrdp_bitmap* self, int x, int y, int pixel)
   {
     return 0;
   }
-  if (x >= 0 && x < self->width && y >= 0 && y < self->height)
+  if (x >= 0 && x < self->line_width && y >= 0 && y < self->lines)
   {
     if (self->bpp == 8)
     {
-      SETPIXEL8(self->data, x, y, self->width, pixel);
+      SETPIXEL8(self->data, x, y, self->line_width, pixel);
     }
     else if (self->bpp == 15 || self->bpp == 16)
     {
-      SETPIXEL16(self->data, x, y, self->width, pixel);
+      SETPIXEL16(self->data, x, y, self->line_width, pixel);
     }
     else if (self->bpp == 24)
     {
-      SETPIXEL32(self->data, x, y, self->width, pixel);
+      SETPIXEL32(self->data, x, y, self->line_width, pixel);
     }
   }
   return 0;
@@ -534,11 +550,15 @@ xrdp_bitmap_copy_box(struct xrdp_bitmap* self,
   {
     return 1;
   }
-  if (self->type != WND_TYPE_BITMAP && self->type != WND_TYPE_IMAGE)
+  if (self->type != WND_TYPE_BITMAP &&
+      self->type != WND_TYPE_IMAGE &&
+      self->type != WND_TYPE_TILE)
   {
     return 1;
   }
-  if (dest->type != WND_TYPE_BITMAP && dest->type != WND_TYPE_IMAGE)
+  if (dest->type != WND_TYPE_BITMAP &&
+      dest->type != WND_TYPE_IMAGE &&
+      dest->type != WND_TYPE_TILE)
   {
     return 1;
   }
@@ -562,8 +582,8 @@ xrdp_bitmap_copy_box(struct xrdp_bitmap* self,
     {
       for (j = 0; j < cx; j++)
       {
-        pixel = GETPIXEL32(self->data, j + x, i + y, self->width);
-        SETPIXEL32(dest->data, j + destx, i + desty, dest->width, pixel);
+        pixel = GETPIXEL32(self->data, j + x, i + y, self->line_width);
+        SETPIXEL32(dest->data, j + destx, i + desty, dest->line_width, pixel);
       }
     }
   }
@@ -573,8 +593,8 @@ xrdp_bitmap_copy_box(struct xrdp_bitmap* self,
     {
       for (j = 0; j < cx; j++)
       {
-        pixel = GETPIXEL16(self->data, j + x, i + y, self->width);
-        SETPIXEL16(dest->data, j + destx, i + desty, dest->width, pixel);
+        pixel = GETPIXEL16(self->data, j + x, i + y, self->line_width);
+        SETPIXEL16(dest->data, j + destx, i + desty, dest->line_width, pixel);
       }
     }
   }
@@ -584,8 +604,8 @@ xrdp_bitmap_copy_box(struct xrdp_bitmap* self,
     {
       for (j = 0; j < cx; j++)
       {
-        pixel = GETPIXEL8(self->data, j + x, i + y, self->width);
-        SETPIXEL8(dest->data, j + destx, i + desty, dest->width, pixel);
+        pixel = GETPIXEL8(self->data, j + x, i + y, self->line_width);
+        SETPIXEL8(dest->data, j + destx, i + desty, dest->line_width, pixel);
       }
     }
   }
@@ -625,11 +645,15 @@ xrdp_bitmap_copy_box_with_crc(struct xrdp_bitmap* self,
   {
     return 1;
   }
-  if (self->type != WND_TYPE_BITMAP && self->type != WND_TYPE_IMAGE)
+  if (self->type != WND_TYPE_BITMAP &&
+      self->type != WND_TYPE_IMAGE &&
+      self->type != WND_TYPE_TILE)
   {
     return 1;
   }
-  if (dest->type != WND_TYPE_BITMAP && dest->type != WND_TYPE_IMAGE)
+  if (dest->type != WND_TYPE_BITMAP &&
+      dest->type != WND_TYPE_IMAGE &&
+      dest->type != WND_TYPE_TILE)
   {
     return 1;
   }
@@ -655,20 +679,20 @@ xrdp_bitmap_copy_box_with_crc(struct xrdp_bitmap* self,
     {
       for (j = 0; j < cx; j++)
       {
-        pixel = GETPIXEL32(self->data, j + x, i + y, self->width);
+        pixel = GETPIXEL32(self->data, j + x, i + y, self->line_width);
         CRC_PASS(pixel, crc);
         CRC_PASS(pixel >> 8, crc);
         CRC_PASS(pixel >> 16, crc);
-        SETPIXEL32(dest->data, j + destx, i + desty, dest->width, pixel);
+        SETPIXEL32(dest->data, j + destx, i + desty, dest->line_width, pixel);
       }
     }
   }
   else if (self->bpp == 15 || self->bpp == 16)
   {
-    s16 = ((unsigned short*)(self->data)) + (self->width * y + x);
-    d16 = ((unsigned short*)(dest->data)) + (dest->width * desty + destx);
-    incs = self->width - cx;
-    incd = dest->width - cx;
+    s16 = ((unsigned short*)(self->data)) + (self->line_width * y + x);
+    d16 = ((unsigned short*)(dest->data)) + (dest->line_width * desty + destx);
+    incs = self->line_width - cx;
+    incd = dest->line_width - cx;
     for (i = 0; i < cy; i++)
     {
       for (j = 0; j < cx; j++)
@@ -686,10 +710,10 @@ xrdp_bitmap_copy_box_with_crc(struct xrdp_bitmap* self,
   }
   else if (self->bpp == 8)
   {
-    s8 = ((unsigned char*)(self->data)) + (self->width * y + x);
-    d8 = ((unsigned char*)(dest->data)) + (dest->width * desty + destx);
-    incs = self->width - cx;
-    incd = dest->width - cx;
+    s8 = ((unsigned char*)(self->data)) + (self->line_width * y + x);
+    d8 = ((unsigned char*)(dest->data)) + (dest->line_width * desty + destx);
+    incs = self->line_width - cx;
+    incd = dest->line_width - cx;
     for (i = 0; i < cy; i++)
     {
       for (j = 0; j < cx; j++)
@@ -731,15 +755,15 @@ xrdp_bitmap_compare(struct xrdp_bitmap* self,
   {
     return 0;
   }
-  if (self->width != b->width)
+  if (self->line_width != b->line_width)
   {
     return 0;
   }
-  if (self->height != b->height)
+  if (self->lines != b->lines)
   {
     return 0;
   }
-  if (g_memcmp(self->data, b->data, b->height * b->line_size) == 0)
+  if (g_memcmp(self->data, b->data, b->lines * b->line_size) == 0)
   {
     return 1;
   }
@@ -764,11 +788,11 @@ xrdp_bitmap_compare_with_crc(struct xrdp_bitmap* self,
   {
     return 0;
   }
-  if (self->width != b->width)
+  if (self->line_width != b->line_width)
   {
     return 0;
   }
-  if (self->height != b->height)
+  if (self->lines != b->lines)
   {
     return 0;
   }
@@ -826,32 +850,32 @@ xrdp_bitmap_draw_button(struct xrdp_bitmap* self,
 {
   if (down)
   {
-    /* gray box */
-    painter->fg_color = self->wm->grey;
+    /* medium gray box */
+    painter->fg_color = self->wm->med_grey;
     xrdp_painter_fill_rect(painter, self, x, y, w, h);
-    /* black top line */
-    painter->fg_color = self->wm->black;
-    xrdp_painter_fill_rect(painter, self, x, y, w, 1);
-    /* black left line */
-    painter->fg_color = self->wm->black;
-    xrdp_painter_fill_rect(painter, self, x, y, 1, h);
     /* dark grey top line */
     painter->fg_color = self->wm->dark_grey;
-    xrdp_painter_fill_rect(painter, self, x + 1, y + 1, w - 2, 1);
+    xrdp_painter_fill_rect(painter, self, x, y, w, 1);
     /* dark grey left line */
     painter->fg_color = self->wm->dark_grey;
+    xrdp_painter_fill_rect(painter, self, x, y, 1, h);
+    /* medium grey top line */
+    painter->fg_color = self->wm->med_grey;
+    xrdp_painter_fill_rect(painter, self, x + 1, y + 1, w - 2, 1);
+    /* medium grey left line */
+    painter->fg_color = self->wm->med_grey;
     xrdp_painter_fill_rect(painter, self, x + 1, y + 1, 1, h - 2);
+    /* white bottom line */
+    painter->fg_color = self->wm->white;
+    xrdp_painter_fill_rect(painter, self, x + 1, y + (h - 2), w - 1, 1);
+    /* white right line */
+    painter->fg_color = self->wm->white;
+    xrdp_painter_fill_rect(painter, self, x + (w - 2), y + 1, 1, h - 1);
     /* dark grey bottom line */
     painter->fg_color = self->wm->dark_grey;
-    xrdp_painter_fill_rect(painter, self, x + 1, y + (h - 2), w - 1, 1);
+    xrdp_painter_fill_rect(painter, self, x, y + (h - 1), w, 1);
     /* dark grey right line */
     painter->fg_color = self->wm->dark_grey;
-    xrdp_painter_fill_rect(painter, self, x + (w - 2), y + 1, 1, h - 1);
-    /* black bottom line */
-    painter->fg_color = self->wm->black;
-    xrdp_painter_fill_rect(painter, self, x, y + (h - 1), w, 1);
-    /* black right line */
-    painter->fg_color = self->wm->black;
     xrdp_painter_fill_rect(painter, self, x + (w - 1), y, 1, h);
   }
   else
@@ -859,23 +883,29 @@ xrdp_bitmap_draw_button(struct xrdp_bitmap* self,
     /* gray box */
     painter->fg_color = self->wm->grey;
     xrdp_painter_fill_rect(painter, self, x, y, w, h);
+    /* dark grey top line */
+    painter->fg_color = self->wm->dark_grey;
+    xrdp_painter_fill_rect(painter, self, x, y, w, 1);
+    /* dark grey left line */
+    painter->fg_color = self->wm->dark_grey;
+    xrdp_painter_fill_rect(painter, self, x, y, 1, h);
     /* white top line */
     painter->fg_color = self->wm->white;
-    xrdp_painter_fill_rect(painter, self, x, y, w, 1);
+    xrdp_painter_fill_rect(painter, self, x + 1, y + 1, w - 2, 1);
     /* white left line */
     painter->fg_color = self->wm->white;
-    xrdp_painter_fill_rect(painter, self, x, y, 1, h);
+    xrdp_painter_fill_rect(painter, self, x + 1, y + 1, 1, h - 2);
+    /* medium grey bottom line */
+    painter->fg_color = self->wm->med_grey;
+    xrdp_painter_fill_rect(painter, self, x + 1, y + (h - 2), w - 1, 1);
+    /* medium grey right line */
+    painter->fg_color = self->wm->med_grey;
+    xrdp_painter_fill_rect(painter, self, x + (w - 2), y + 1, 1, h - 1);
     /* dark grey bottom line */
     painter->fg_color = self->wm->dark_grey;
-    xrdp_painter_fill_rect(painter, self, x + 1, y + (h - 2), w - 1, 1);
+    xrdp_painter_fill_rect(painter, self, x, y + (h - 1), w, 1);
     /* dark grey right line */
     painter->fg_color = self->wm->dark_grey;
-    xrdp_painter_fill_rect(painter, self, (x + w) - 2, y + 1, 1, h - 1);
-    /* black bottom line */
-    painter->fg_color = self->wm->black;
-    xrdp_painter_fill_rect(painter, self, x, y + (h - 1), w, 1);
-    /* black right line */
-    painter->fg_color = self->wm->black;
     xrdp_painter_fill_rect(painter, self, x + (w - 1), y, 1, h);
   }
   return 0;
@@ -931,43 +961,55 @@ xrdp_bitmap_invalidate(struct xrdp_bitmap* self, struct xrdp_rect* rect)
     /* draw grey background */
     painter->fg_color = self->bg_color;
     xrdp_painter_fill_rect(painter, self, 0, 0, self->width, self->height);
+    /* top grey line */
+    painter->fg_color = self->wm->white;
+    xrdp_painter_fill_rect(painter, self, 0, 0, self->width, 1);
+    /* left grey line */
+    painter->fg_color = self->wm->white;
+    xrdp_painter_fill_rect(painter, self, 0, 0, 1, self->height);
+
     /* top white line */
     painter->fg_color = self->wm->white;
     xrdp_painter_fill_rect(painter, self, 1, 1, self->width - 2, 1);
     /* left white line */
     painter->fg_color = self->wm->white;
     xrdp_painter_fill_rect(painter, self, 1, 1, 1, self->height - 2);
-    /* bottom dark grey line */
-    painter->fg_color = self->wm->dark_grey;
+
+    /* bottom medium grey line */
+    painter->fg_color = self->wm->med_grey;
     xrdp_painter_fill_rect(painter, self, 1, self->height - 2,
                            self->width - 2, 1);
-    /* right dark grey line */
-    painter->fg_color = self->wm->dark_grey;
+    /* right medium grey line */
+    painter->fg_color = self->wm->med_grey;
     xrdp_painter_fill_rect(painter, self, self->width - 2, 1, 1,
                            self->height - 2);
-    /* bottom black line */
-    painter->fg_color = self->wm->black;
+    /* bottom dark grey line */
+    painter->fg_color = self->wm->dark_grey;
     xrdp_painter_fill_rect(painter, self, 0, self->height - 1,
                            self->width, 1);
-    /* right black line */
-    painter->fg_color = self->wm->black;
+    /* right dark grey line */
+    painter->fg_color = self->wm->dark_grey;
     xrdp_painter_fill_rect(painter, self, self->width - 1, 0,
                            1, self->height);
+
+    /* bottom dark gray line */
+    painter->fg_color = self->wm->dark_grey;
+    xrdp_painter_fill_rect(painter, self, 2, 22, self->width - 4, 1); 
     if (self->wm->focused_window == self)
     {
       /* active title bar */
-      painter->fg_color = self->wm->blue;
-      xrdp_painter_fill_rect(painter, self, 3, 3, self->width - 5, 18);
+      painter->fg_color = self->wm->dark_blue;
+      xrdp_painter_fill_rect(painter, self, 2, 2, self->width - 4, 20);
       painter->fg_color = self->wm->white;
     }
     else
     {
       /* inactive title bar */
       painter->fg_color = self->wm->dark_grey;
-      xrdp_painter_fill_rect(painter, self, 3, 3, self->width - 5, 18);
+      xrdp_painter_fill_rect(painter, self, 2, 2, self->width - 4, 20);
       painter->fg_color = self->wm->black;
     }
-    xrdp_painter_draw_text(painter, self, 4, 4, self->caption1);
+    xrdp_painter_draw_text(painter, self, 8, 4, self->caption1);
   }
   else if (self->type == WND_TYPE_SCREEN) /* 2 */
   {
@@ -1052,65 +1094,78 @@ xrdp_bitmap_invalidate(struct xrdp_bitmap* self, struct xrdp_rect* rect)
   }
   else if (self->type == WND_TYPE_EDIT) /* 5 */
   {
-    /* draw gray box */
-    painter->fg_color = self->wm->grey;
+    /* draw dark gray box */
+    painter->fg_color = self->wm->dark_grey;
     xrdp_painter_fill_rect(painter, self, 0, 0, self->width, self->height);
     /* main white background */
     painter->fg_color = self->wm->white;
-    xrdp_painter_fill_rect(painter, self, 1, 1, self->width - 3,
-                           self->height - 3);
-    /* dark grey top line */
-    painter->fg_color = self->wm->dark_grey;
-    xrdp_painter_fill_rect(painter, self, 0, 0, self->width, 1);
-    /* dark grey left line */
-    painter->fg_color = self->wm->dark_grey;
-    xrdp_painter_fill_rect(painter, self, 0, 0, 1, self->height);
+    xrdp_painter_fill_rect(painter, self, 2, 2, self->width - 4,
+                           self->height - 4);
+    /* medium grey top line */
+    painter->fg_color = self->wm->med_grey;
+    xrdp_painter_fill_rect(painter, self, 1, 1, self->width - 2, 1);
+    /* medium grey left line */
+    painter->fg_color = self->wm->med_grey;
+    xrdp_painter_fill_rect(painter, self, 1, 1, 1, self->height - 2);
     /* white bottom line */
     painter->fg_color = self->wm->white;
-    xrdp_painter_fill_rect(painter, self, 0, self->height- 1, self->width, 1);
+    xrdp_painter_fill_rect(painter, self, 1, self->height- 2, self->width - 2, 1);
     /* white right line */
     painter->fg_color = self->wm->white;
-    xrdp_painter_fill_rect(painter, self, self->width - 1, 0, 1, self->height);
-    /* black left line */
-    painter->fg_color = self->wm->black;
-    xrdp_painter_fill_rect(painter, self, 1, 1, 1, self->height - 2);
-    /* black top line */
-    painter->fg_color = self->wm->black;
-    xrdp_painter_fill_rect(painter, self, 1, 1, self->width - 2, 1);
+    xrdp_painter_fill_rect(painter, self, self->width - 2, 1, 1, self->height - 2);
     /* draw text */
     painter->fg_color = self->wm->black;
     if (self->password_char != 0)
     {
-      i = g_mbstowcs(0, self->caption1, 0);
+      i = MIN (g_mbstowcs(0, self->caption1, 0), 255);
       g_memset(text, self->password_char, i);
       text[i] = 0;
       xrdp_painter_draw_text(painter, self, 4, 2, text);
     }
     else
     {
-      xrdp_painter_draw_text(painter, self, 4, 2, self->caption1);
+      char *cap = self->caption1;
+      int  pos;
+
+      i = 2;
+      for (;;)
+      {
+        for (pos = 0; cap[pos] != '\0' && cap[pos] != '\n'; pos++);
+
+        if (cap[pos] == '\0')
+        {
+          xrdp_painter_draw_text(painter, self, 4, i, cap);
+          break;
+        }
+        cap[pos] = '\0';
+        xrdp_painter_draw_text(painter, self, 4, i, cap);
+        cap[pos] = '\n';
+        cap += (pos + 1);
+        i += 15;
+      }
     }
     /* draw xor box(cursor) */
     if (self->parent != 0)
     {
       if (self->parent->focused_control == self)
       {
+	i = MIN (self->edit_pos, 255);
         if (self->password_char != 0)
         {
-          wchar_repeat(wtext, 255, self->password_char, self->edit_pos);
-          wtext[self->edit_pos] = 0;
-          g_wcstombs(text, wtext, 255);
+          wchar_repeat(wtext, 255, self->password_char, i);
+          wtext[i] = 0;
+          g_wcstombs(text, wtext, i);
         }
         else
         {
           g_mbstowcs(wtext, self->caption1, 255);
-          wtext[self->edit_pos] = 0;
+          wtext[i] = 0;
           g_wcstombs(text, wtext, 255);
         }
         w = xrdp_painter_text_width(painter, text);
         painter->fg_color = self->wm->white;
         painter->rop = 0x5a;
-        xrdp_painter_fill_rect(painter, self, 4 + w, 3, 2, self->height - 6);
+        xrdp_painter_fill_rect(painter, self, 4 + w, 3, 2, 14);
       }
     }
     /* reset rop back */
@@ -1123,37 +1178,32 @@ xrdp_bitmap_invalidate(struct xrdp_bitmap* self, struct xrdp_rect* rect)
   }
   else if (self->type == WND_TYPE_COMBO) /* 7 combo box */
   {
-    /* draw gray box */
-    painter->fg_color = self->wm->grey;
+    /* draw dark gray box */
+    painter->fg_color = self->wm->dark_grey;
     xrdp_painter_fill_rect(painter, self, 0, 0, self->width, self->height);
-    /* white background */
+    /* main white background */
     painter->fg_color = self->wm->white;
-    xrdp_painter_fill_rect(painter, self, 1, 1, self->width - 3,
-                           self->height - 3);
+    xrdp_painter_fill_rect(painter, self, 2, 2, self->width - 4,
+                           self->height - 4);
+    /* medium grey top line */
+    painter->fg_color = self->wm->med_grey;
+    xrdp_painter_fill_rect(painter, self, 1, 1, self->width - 2, 1);
+    /* medium grey left line */
+    painter->fg_color = self->wm->med_grey;
+    xrdp_painter_fill_rect(painter, self, 1, 1, 1, self->height - 2);
+    /* white bottom line */
+    painter->fg_color = self->wm->white;
+    xrdp_painter_fill_rect(painter, self, 1, self->height- 2, self->width - 2, 1);
+    /* white right line */
+    painter->fg_color = self->wm->white;
+    xrdp_painter_fill_rect(painter, self, self->width - 2, 1, 1, self->height - 2);
+
     if (self->parent->focused_control == self)
     {
       painter->fg_color = self->wm->dark_blue;
-      xrdp_painter_fill_rect(painter, self, 3, 3, (self->width - 6) - 18,
-                             self->height - 5);
+      xrdp_painter_fill_rect(painter, self, 2, 2, (self->width - 4) - 19,
+                             self->height - 4);
     }
-    /* dark grey top line */
-    painter->fg_color = self->wm->dark_grey;
-    xrdp_painter_fill_rect(painter, self, 0, 0, self->width, 1);
-    /* dark grey left line */
-    painter->fg_color = self->wm->dark_grey;
-    xrdp_painter_fill_rect(painter, self, 0, 0, 1, self->height);
-    /* white bottom line */
-    painter->fg_color = self->wm->white;
-    xrdp_painter_fill_rect(painter, self, 0, self->height- 1, self->width, 1);
-    /* white right line */
-    painter->fg_color = self->wm->white;
-    xrdp_painter_fill_rect(painter, self, self->width - 1, 0, 1, self->height);
-    /* black left line */
-    painter->fg_color = self->wm->black;
-    xrdp_painter_fill_rect(painter, self, 1, 1, 1, self->height - 2);
-    /* black top line */
-    painter->fg_color = self->wm->black;
-    xrdp_painter_fill_rect(painter, self, 1, 1, self->width - 2, 1);
     /* draw text */
     if (self->parent->focused_control == self)
     {
@@ -1178,6 +1228,13 @@ xrdp_bitmap_invalidate(struct xrdp_bitmap* self, struct xrdp_rect* rect)
     {
       xrdp_bitmap_draw_button(self, painter, x, y, w, h, 1);
     }
+    /* black arrow */
+    painter->fg_color = self->wm->black;
+    xrdp_painter_fill_rect(painter, self, x + 5, y + 6, w - 10, 1);
+    xrdp_painter_fill_rect(painter, self, x + 6, y + 7, w - 12, 1);
+    xrdp_painter_fill_rect(painter, self, x + 7, y + 8, w - 14, 1);
+    xrdp_painter_fill_rect(painter, self, x + 8, y + 9, w - 16, 1);
+
   }
   else if (self->type == WND_TYPE_SPECIAL) /* 8 special */
   {
@@ -1207,6 +1264,22 @@ xrdp_bitmap_invalidate(struct xrdp_bitmap* self, struct xrdp_rect* rect)
       }
     }
   }
+  else if (self->type == WND_TYPE_TILE) /* 10 tile */
+  {
+      y = self->top;
+      while (y < self->height)
+      {
+          x = self->left;
+	  while (x < self->width)
+	  {
+	      xrdp_painter_copy(painter, self, self, x, y,
+				self->line_width, self->lines, 0, 0);
+              x += self->line_width;
+	  }
+          y += self->lines;
+      }
+  }
+
   /* notify */
   if (self->notify != 0)
   {
