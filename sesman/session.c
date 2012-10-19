@@ -536,6 +536,9 @@ for user %s denied", username);
   }
 
   display = get_unused_display ();
+  g_sprintf(geometry, "%dx%d", width, height);
+  g_sprintf(depth, "%d", bpp);
+  g_sprintf(screen, ":%d", display);
 
   /*THREAD-FIX unlock chain*/
   lock_chain_release();
@@ -632,9 +635,6 @@ for user %s denied", username);
     }
 
     env_check_password_file(passwd_file, password);
-    g_sprintf(geometry, "%dx%d", width, height);
-    g_sprintf(depth, "%d", bpp);
-    g_sprintf(screen, ":%d", display);
 
 #ifndef _WIN32
     g_signal (SIGUSR1, sig_usr1_waiting);
