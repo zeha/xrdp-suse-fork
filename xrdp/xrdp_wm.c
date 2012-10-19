@@ -1351,7 +1351,12 @@ xrdp_wm_key(struct xrdp_wm* self, int device_flags, int scan_code)
       }
       else
       {
-        self->mm->mod->mod_event(self->mm->mod, msg, scan_code,
+        if ((scan_code == 15) && (device_flags == KBD_FLAG_UP))
+        {
+          g_writeln("Don't track Tab keys from Windows when Max/Min or Move the rdp client window.\n");
+        }
+        else
+          self->mm->mod->mod_event(self->mm->mod, msg, scan_code,
                                  device_flags, scan_code, device_flags);
       }
     }
