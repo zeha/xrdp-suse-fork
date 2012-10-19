@@ -1306,6 +1306,7 @@ xrdp_wm_key(struct xrdp_wm* self, int device_flags, int scan_code)
 {
   int msg;
   int c;
+  static int last_key_status = -1;
 
   /*g_printf("count %d\n", self->key_down_list->count);*/
   scan_code = scan_code % 128;
@@ -1351,7 +1352,7 @@ xrdp_wm_key(struct xrdp_wm* self, int device_flags, int scan_code)
       }
       else
       {
-        if ((scan_code == 15) && (device_flags == KBD_FLAG_UP))
+        if ((last_key_status != WM_KEYDOWN) && (scan_code == 15) && (device_flags == KBD_FLAG_UP))
         {
           g_writeln("Don't track Tab keys from Windows when Max/Min or Move the rdp client window.\n");
         }
@@ -1366,6 +1367,7 @@ xrdp_wm_key(struct xrdp_wm* self, int device_flags, int scan_code)
     xrdp_bitmap_def_proc(self->focused_window,
                          msg, scan_code, device_flags);
   }
+  last_key_status = msg;
   return 0;
 }
 
